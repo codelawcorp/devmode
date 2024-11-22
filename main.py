@@ -1,34 +1,39 @@
 import os
+import sys
 import fire
 import yaml
 from kubernetes import client, config
+import sys
 
-
-kubeconfig = os.getenv("KUBECONFIG", "~/.kube/config")
-config.load_kube_config(config_file=kubeconfig)
+try:
+    kubeconfig = os.getenv("KUBECONFIG", "~/.kube/config")
+    config.load_kube_config(config_file=kubeconfig)
+except config.config_exception.ConfigException as e:
+    print(f"Error loading kubeconfig: {e}")
+    sys.exit(1)
 
 # Create an API client for CoreV1
 V1_API = client.CoreV1Api()
 
-def remove_null_and_empty_fields(obj):
-    """
-    Recursively removes keys with None or empty values from a dictionary.
-    Args:
-        obj: The object to process (dict, list, or other).
+# def remove_null_and_empty_fields(obj):
+#     """
+#     Recursively removes keys with None or empty values from a dictionary.
+#     Args:
+#         obj: The object to process (dict, list, or other).
 
-    Returns:
-        A cleaned version of the object.
-    """
-    if isinstance(obj, dict):
-        return {
-            k: remove_null_and_empty_fields(v)
-            for k, v in obj.items()
-            if v not in [None, {}, [], ""]
-        }
-    elif isinstance(obj, list):
-        return [remove_null_and_empty_fields(v) for v in obj if v not in [None, {}, [], ""]]
-    else:
-        return obj
+#     Returns:
+#         A cleaned version of the object.
+#     """
+#     if isinstance(obj, dict):
+#         return {
+#             k: remove_null_and_empty_fields(v)
+#             for k, v in obj.items()
+#             if v not in [None, {}, [], ""]
+#         }
+#     elif isinstance(obj, list):
+#         return [remove_null_and_empty_fields(v) for v in obj if v not in [None, {}, [], ""]]
+#     else:
+#         return obj
 
 
 def get_clean_pod_definition(pod_name, namespace="default"):
@@ -40,60 +45,47 @@ def get_clean_pod_definition(pod_name, namespace="default"):
         namespace (str): The namespace of the pod (default: "default").
 
     Returns:
-        dict: Cleaned pod definition.
+        V1Pod: Cleaned pod definition.
     """
-    # Load the Kubernetes configuration from KUBECONFIG or the default path
-
-
     try:
         # Fetch the pod definition
         pod = V1_API.read_namespaced_pod(name=pod_name, namespace=namespace)
 
-        # Convert the pod object to a dictionary
-        pod_dict = pod.to_dict()
-
-        # Remove redundant fields
-        for field in [
-            "status",
-            "metadata.generate_name",
-            "metadata.managed_fields",
-            "metadata.creation_timestamp",
-            "metadata.resource_version",
-            "metadata.uid",
-            "metadata.self_link",
-            "metadata.generation",
-            "metadata.owner_references",
-        ]:
-            keys = field.split(".")
-            d = pod_dict
-            for key in keys[:-1]:
-                d = d.get(key, {})
-            if keys[-1] in d:
-                d.pop(keys[-1])
+        # Remove redundant metadata fields
+        pod.metadata.generate_name = None
+        pod.metadata.managed_fields = None
+        pod.metadata.creation_timestamp = None
+        pod.metadata.resource_version = None
+        pod.metadata.uid = None
+        pod.metadata.self_link = None
+        pod.metadata.generation = None
+        pod.metadata.owner_references = None
 
         # Remove specific labels
         labels_to_remove = [
-            "app.kubernetes.io/instance",
-            "app.kubernetes.io/managed-by",
-            "app.kubernetes.io/name",
-            "app.kubernetes.io/part-of", 
+            # "app.kubernetes.io/instance", # This one ise used by service selector
+            # "app.kubernetes.io/name",  # This one ise used by service selector
+            "app.kubernetes.io/managed-by", 
+            "app.kubernetes.io/part-of",
             "app.kubernetes.io/version",
             "helm.sh/chart",
             "pod-template-hash"
         ]
         
-        if "metadata" in pod_dict and "labels" in pod_dict["metadata"]:
+        if pod.metadata.labels:
             for label in labels_to_remove:
-                pod_dict["metadata"]["labels"].pop(label, None)
+                pod.metadata.labels.pop(label, None)
 
-        # Remove null and empty fields
-        return remove_null_and_empty_fields(pod_dict)
+        # Clear status
+        pod.status = None
+
+        return pod
     except client.exceptions.ApiException as e:
         print(f"Error fetching pod {pod_name} in namespace {namespace}: {e}")
-        return {}
+        return None
 
 
-def modify_pod_for_dev_mode(pod_dict):
+def modify_pod_for_dev_mode(pod):
     """
     Modifies the pod definition for development mode:
     - Sets user ID to 0.
@@ -101,78 +93,78 @@ def modify_pod_for_dev_mode(pod_dict):
     - Appends "-devmode" to the pod's name.
 
     Args:
-        pod_dict (dict): The original pod definition.
+        pod (V1Pod): The original pod definition.
 
     Returns:
-        dict: Modified pod definition.
+        V1Pod: Modified pod definition.
     """
+    if not pod:
+        return None
+
     # Modify containers
-    for container in pod_dict.get("spec", {}).get("containers", []):
-        container["command"] = ["/bin/sh", "-c"]
-        container["args"] = ["sleep infinity"]
+    for container in pod.spec.containers:
+        container.command = ["/bin/sh", "-c"]
+        container.args = ["""
+                if command -v apt-get &> /dev/null; then
+                    apt-get update && apt-get install -y git
+                elif command -v yum &> /dev/null; then
+                    yum install -y git
+                elif command -v dnf &> /dev/null; then
+                    dnf install -y git
+                elif command -v zypper &> /dev/null; then
+                    zypper install -y git
+                elif command -v pacman &> /dev/null; then
+                    pacman -Sy git
+                elif command -v apk &> /dev/null; then
+                    apk add git
+                else
+                    echo "Unsupported package manager. Please install git manually."
+                fi
+                sleep infinity
+                """]
 
         # Set user ID to 0
-        if "security_context" not in container:
-            container["security_context"] = {}
-        container["security_context"]["run_as_user"] = 0
+        if not container.security_context:
+            container.security_context = client.V1SecurityContext()
+        container.security_context.run_as_user = 0
+
+        # Remove probes
+        container.liveness_probe = None
+        container.readiness_probe = None
+
+        # Handle ports
+        if not container.ports:
+            container.ports = [client.V1ContainerPort(container_port=8080)]
+        else:
+            for port in container.ports:
+                if not port.container_port:
+                    port.container_port = 8080
 
     # Append "-devmode" to pod name
-    if "metadata" in pod_dict and "name" in pod_dict["metadata"]:
-        pod_dict["metadata"]["name"] += "-devmode"
+    pod.metadata.name += "-devmode"
 
-    # Remove liveness and readiness probes
-    for container in pod_dict.get("spec", {}).get("containers", []):
-        if "liveness_probe" in container:
-            container.pop("liveness_probe")
-        if "readiness_probe" in container:
-            container.pop("readiness_probe")
-    # Remove specific volumes and their corresponding volume mounts
-    if "spec" in pod_dict and "volumes" in pod_dict["spec"]:
-        # Get list of volumes to remove
-        volumes_to_remove = [
-            vol["name"] for vol in pod_dict["spec"]["volumes"]
-            if vol["name"].startswith("kube-api-access") or vol["name"] == "eks-pod-identity-token"
-        ]
-        
-        # Filter volumes
-        pod_dict["spec"]["volumes"] = [
-            vol for vol in pod_dict["spec"]["volumes"]
-            if vol["name"] not in volumes_to_remove
-        ]
-        
-        # Remove corresponding volume mounts from all containers
-        for container in pod_dict.get("spec", {}).get("containers", []):
-            if "volume_mounts" in container:
-                container["volume_mounts"] = [
-                    mount for mount in container["volume_mounts"]
-                    if mount["name"] not in volumes_to_remove
+    pod.spec.security_context = None
+
+    # Remove specific volumes and their mounts
+    if pod.spec.volumes:
+        volumes_to_keep = []
+        for vol in pod.spec.volumes:
+            if not (vol.name.startswith("kube-api-access") or vol.name == "eks-pod-identity-token"):
+                volumes_to_keep.append(vol)
+        pod.spec.volumes = volumes_to_keep
+
+        # Remove corresponding volume mounts
+        for container in pod.spec.containers:
+            if container.volume_mounts:
+                container.volume_mounts = [
+                    mount for mount in container.volume_mounts
+                    if not (mount.name.startswith("kube-api-access") or mount.name == "eks-pod-identity-token")
                 ]
 
-    # Preserve container ports from original configuration
-    for container in pod_dict.get("spec", {}).get("containers", []):
-        if "ports" not in container:
-            # If no ports defined, add default port 8080
-            container["ports"] = [{"containerPort": 8080}]
-        else:
-            # Ensure each port has containerPort specified
-            for port in container["ports"]:
-                if "containerPort" not in port:
-                    port["containerPort"] = 8080
+    # Remove node_name
+    pod.spec.node_name = None
 
-
-    # # Remove corresponding volume mounts from containers
-    # for container in pod_dict.get("spec", {}).get("containers", []):
-    #     if "volume_mounts" in container:
-    #         container["volume_mounts"] = [
-    #             mount for mount in container["volume_mounts"]
-    #             if not (mount["name"].startswith("kube-api-access") or mount["name"] == "eks-pod-identity-token")
-    #         ]
-
-    # Remove node_name if present
-    if "spec" in pod_dict and "node_name" in pod_dict["spec"]:
-        pod_dict["spec"].pop("node_name")
-
-    return pod_dict
+    return pod
 
 
 def main(pod_name, namespace="default"):
@@ -182,20 +174,18 @@ def main(pod_name, namespace="default"):
     Args:
         pod_name (str): The name of the pod.
         namespace (str): The namespace of the pod (default: "default").
-        dev_mode (bool): Whether to modify the pod for development mode (default: False).
     """
-    pod_definition = modify_pod_for_dev_mode(get_clean_pod_definition(pod_name, namespace))
-    # Apply the modified pod definition
-    print(yaml.dump(pod_definition, default_flow_style=False))
-    try:
-        V1_API.create_namespaced_pod(
-            body=pod_definition,
-            namespace=namespace
-        )
-        print(f"Successfully created pod {pod_definition['metadata']['name']} in namespace {namespace}")
-    except client.exceptions.ApiException as e:
-        print(f"Failed to create pod: {e}")
-
+    pod = modify_pod_for_dev_mode(get_clean_pod_definition(pod_name, namespace))
+    if pod:
+        print(yaml.dump(pod.to_dict(), default_flow_style=False))
+        try:
+            V1_API.create_namespaced_pod(
+                body=pod,
+                namespace=namespace
+            )
+            print(f"Successfully created pod {pod.metadata.name} in namespace {namespace}")
+        except client.exceptions.ApiException as e:
+            print(f"Failed to create pod: {e}")
 
 
 if __name__ == "__main__":

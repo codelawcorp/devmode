@@ -8,12 +8,13 @@
             "program": "${workspaceFolder}/main.py",
             "args": [
                 "risk-rule-engine-server-5b77b98db8-2xppq",
-                "human-risk"  // assuming default namespace, change if needed
+                "human-risk"
             ],
-            // "console": "integratedTerminal",
+            "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                // "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "${workspaceFolder}",
+                "KUBECONFIG": "~/.kube/config"
             }
         }
     ]
