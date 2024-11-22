@@ -1,0 +1,2 @@
+fire==0.7.0
+kubernetes==31.0.0

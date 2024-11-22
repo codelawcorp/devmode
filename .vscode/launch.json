@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Get Pod Definition",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "risk-rule-engine-server-5b77b98db8-2xppq",
+                "human-risk"  // assuming default namespace, change if needed
+            ],
+            // "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+}
