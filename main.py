@@ -5,7 +5,7 @@ import yaml
 from logger import logger
 from kubernetes import client, config
 import sys
-
+import socket
 logger.debug("Setting up logging and attempting to load kubeconfig")
 try:
     kubeconfig = os.getenv("KUBECONFIG", "~/.kube/config")
@@ -16,117 +16,67 @@ except config.config_exception.ConfigException as e:
     logger.info(f"Error loading kubeconfig: {e}")
     sys.exit(1)
 
-logger.debug("Creating CoreV1 API client")
-# Create an API client for CoreV1
+WORKSPACE_NAME = None
+
+logger.debug("Creating API clients")
 V1_API = client.CoreV1Api()
+APPS_API = client.AppsV1Api()
 
-# def remove_null_and_empty_fields(obj):
-#     """
-#     Recursively removes keys with None or empty values from a dictionary.
-#     Args:
-#         obj: The object to process (dict, list, or other).
-
-#     Returns:
-#         A cleaned version of the object.
-#     """
-#     if isinstance(obj, dict):
-#         return {
-#             k: remove_null_and_empty_fields(v)
-#             for k, v in obj.items()
-#             if v not in [None, {}, [], ""]
-#         }
-#     elif isinstance(obj, list):
-#         return [remove_null_and_empty_fields(v) for v in obj if v not in [None, {}, [], ""]]
-#     else:
-#         return obj
-
-
-def get_clean_pod_definition(pod_name, namespace="default"):
+def get_deployment_definition(deployment_name, namespace="default"):
     """
-    Fetches the pod definition from the Kubernetes cluster and removes redundant fields.
+    Fetches the deployment definition from the Kubernetes cluster.
 
     Args:
-        pod_name (str): The name of the pod.
-        namespace (str): The namespace of the pod (default: "default").
+        deployment_name (str): The name of the deployment.
+        namespace (str): The namespace of the deployment (default: "default").
 
     Returns:
-        V1Pod: Cleaned pod definition.
+        V1Deployment: Deployment definition.
     """
-    logger.debug(f"Getting clean pod definition for {pod_name} in namespace {namespace}")
+    logger.debug(f"Getting deployment definition for {deployment_name} in namespace {namespace}")
     try:
-        # Fetch the pod definition
-        logger.debug("Fetching pod definition from API")
-        pod = V1_API.read_namespaced_pod(name=pod_name, namespace=namespace)
-
-        logger.debug("Removing redundant metadata fields")
-        # Remove redundant metadata fields
-        logger.debug("Setting pod.metadata.generate_name to None")
-        pod.metadata.generate_name = None
-        logger.debug("Setting pod.metadata.managed_fields to None") 
-        pod.metadata.managed_fields = None
-        logger.debug("Setting pod.metadata.creation_timestamp to None")
-        pod.metadata.creation_timestamp = None
-        logger.debug("Setting pod.metadata.resource_version to None")
-        pod.metadata.resource_version = None
-        logger.debug("Setting pod.metadata.uid to None")
-        pod.metadata.uid = None
-        logger.debug("Setting pod.metadata.self_link to None")
-        pod.metadata.self_link = None
-        logger.debug("Setting pod.metadata.generation to None")
-        pod.metadata.generation = None
-        logger.debug("Setting pod.metadata.owner_references to None")
-        pod.metadata.owner_references = None
-
-        logger.debug("Processing labels to remove")
-        # Remove specific labels
-        labels_to_remove = [
-            # "app.kubernetes.io/instance", # This one ise used by service selector
-            # "app.kubernetes.io/name",  # This one ise used by service selector
-            "app.kubernetes.io/managed-by", 
-            "app.kubernetes.io/part-of",
-            "app.kubernetes.io/version",
-            "helm.sh/chart",
-            "pod-template-hash"
-        ]
-        
-        if pod.metadata.labels:
-            logger.debug("Removing specified labels")
-            for label in labels_to_remove:
-                logger.debug(f"Removing label: {label}")
-                pod.metadata.labels.pop(label, None)
-
-        logger.debug("Clearing pod status")
-        # Clear status
-        pod.status = None
-
-        return pod
+        logger.debug("Fetching deployment definition from API")
+        deployment = APPS_API.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+        return deployment
     except client.exceptions.ApiException as e:
-        logger.debug(f"API Exception when fetching pod: {e}")
-        logger.info(f"Error fetching pod {pod_name} in namespace {namespace}: {e}")
+        logger.debug(f"API Exception when fetching deployment: {e}")
+        logger.info(f"Error fetching deployment {deployment_name} in namespace {namespace}: {e}")
         return None
 
-
-def modify_pod_for_dev_mode(pod):
+def modify_deployment_for_dev_mode(deployment):
     """
-    Modifies the pod definition for development mode:
-    - Sets user ID to 0.
-    - Changes command to "/bin/sh" and args to "sleep infinity".
-    - Appends "-devmode" to the pod's name.
+    Modifies the deployment definition for development mode:
+    - Sets replicas to 1
+    - Sets user ID to 0 in containers
+    - Changes container command and args
+    - Appends "-devmode" to the deployment name
 
     Args:
-        pod (V1Pod): The original pod definition.
+        deployment (V1Deployment): The original deployment definition.
 
     Returns:
-        V1Pod: Modified pod definition.
+        V1Deployment: Modified deployment definition.
     """
-    logger.debug("Starting pod modification for dev mode")
-    if not pod:
-        logger.debug("Pod is None, returning None")
+    logger.debug("Starting deployment modification for dev mode")
+    if not deployment:
+        logger.debug("Deployment is None, returning None")
         return None
+
+    logger.debug("Setting replicas to 1")
+    deployment.spec.replicas = 1
+
+    logger.debug("Removing resourceVersion and other service fields")
+    deployment.metadata.resource_version = None
+    deployment.metadata.uid = None
+    deployment.metadata.creation_timestamp = None
+    deployment.metadata.generation = None
+    deployment.metadata.annotations = None
+    deployment.metadata.annotations = None
+    deployment.metadata.owner_references = None
+    deployment.metadata.managed_fields = None
 
     logger.debug("Modifying containers")
-    # Modify containers
-    for container in pod.spec.containers:
+    for container in deployment.spec.template.spec.containers:
         logger.debug(f"Changing `{container.name}` container's command")
         container.command = ["/bin/sh", "-c"]
         logger.debug(f"Changing `{container.name}` container's args")
@@ -147,24 +97,20 @@ def modify_pod_for_dev_mode(pod):
                     echo "Unsupported package manager. Please install git manually."
                 fi
 
-                          
-                chmod u+w /root # This is requried for vscode server to b
+                chmod u+w /root # This is required for vscode server
                 sleep infinity
                 """]
 
         logger.debug("Setting security context")
-        # Set user ID to 0
         if not container.security_context:
             container.security_context = client.V1SecurityContext()
         container.security_context.run_as_user = 0
 
         logger.debug("Removing probes")
-        # Remove probes
         container.liveness_probe = None
         container.readiness_probe = None
 
         logger.debug("Handling container ports")
-        # Handle ports
         if not container.ports:
             container.ports = [client.V1ContainerPort(container_port=8080)]
         else:
@@ -172,55 +118,55 @@ def modify_pod_for_dev_mode(pod):
                 if not port.container_port:
                     port.container_port = 8080
 
-    logger.debug("Updating pod name")
-    # Append "-devmode" to pod name
-    pod.metadata.name += "-devmode"
+    logger.debug("Updating deployment name")
+    import socket
+    
+    deployment.metadata.name += f"-{WORKSPACE_NAME}-devmode"
+    deployment.spec.template.metadata.labels["app"] = deployment.metadata.name
 
     logger.debug("Clearing pod security context")
-    pod.spec.security_context = None
+    deployment.spec.template.spec.security_context = None
 
     logger.debug("Processing volumes and mounts")
-    # Remove specific volumes and their mounts
-    if pod.spec.volumes:
+    if deployment.spec.template.spec.volumes:
         volumes_to_keep = []
-        for vol in pod.spec.volumes:
+        for vol in deployment.spec.template.spec.volumes:
             if not (vol.name.startswith("kube-api-access") or vol.name == "eks-pod-identity-token"):
                 volumes_to_keep.append(vol)
-        pod.spec.volumes = volumes_to_keep
+        deployment.spec.template.spec.volumes = volumes_to_keep
 
         logger.debug("Removing corresponding volume mounts")
-        # Remove corresponding volume mounts
-        for container in pod.spec.containers:
+        for container in deployment.spec.template.spec.containers:
             if container.volume_mounts:
                 container.volume_mounts = [
                     mount for mount in container.volume_mounts
                     if not (mount.name.startswith("kube-api-access") or mount.name == "eks-pod-identity-token")
                 ]
 
-    logger.debug("Removing node name")
-    # Remove node_name
-    pod.spec.node_name = None
+    return deployment
 
-    return pod
-
-
-def start(pod_name, namespace="default"):
+def start(deployment_name, namespace="default", workspace_name = None):
+    if workspace_name is None:
+        logger.debug("No workspace name provided, using hostname")
+        global WORKSPACE_NAME 
+        WORKSPACE_NAME = socket.gethostname().lower().replace('_','-')
     """
-    Main function to fetch, modify, and print the pod definition in YAML format.
+    Main function to fetch, modify, and create the deployment in dev mode.
 
     Args:
-        pod_name (str): The name of the pod.
-        namespace (str): The namespace of the pod (default: "default").
+        deployment_name (str): The name of the deployment.
+        namespace (str): The namespace of the deployment (default: "default").
     """
-    logger.debug(f"Starting main function with pod_name={pod_name}, namespace={namespace}")
-    pod = modify_pod_for_dev_mode(get_clean_pod_definition(pod_name, namespace))
-    if pod:
-        logger.debug("Dumping pod definition to YAML")
-        logger.debug(yaml.dump(pod.to_dict(), default_flow_style=False))
-        # Create PVC for the pod
+    logger.debug(f"Starting main function with deployment_name={deployment_name}, namespace={namespace}")
+    deployment = modify_deployment_for_dev_mode(get_deployment_definition(deployment_name, namespace))
+    if deployment:
+        logger.debug("Dumping deployment definition to YAML")
+        logger.debug(yaml.dump(deployment.to_dict(), default_flow_style=False))
+
+        # Create PVC for the deployment
         pvc = client.V1PersistentVolumeClaim(
             metadata=client.V1ObjectMeta(
-                name=f"{pod.metadata.name}-pvc",
+                name=f"{deployment.metadata.name}-pvc",
                 namespace=namespace
             ),
             spec=client.V1PersistentVolumeClaimSpec(
@@ -245,24 +191,23 @@ def start(pod_name, namespace="default"):
             else:
                 logger.error(f"Failed to create PVC: {e}")
                 raise
+
         try:
-            logger.debug("Attempting to create pod in cluster")
-            
-            V1_API.create_namespaced_pod(
-                body=pod,
+            logger.debug("Attempting to create deployment in cluster")
+            APPS_API.create_namespaced_deployment(
+                body=deployment,
                 namespace=namespace
             )
-            logger.debug("Pod created successfully")
-            logger.info(f"Successfully created pod {pod.metadata.name} in namespace {namespace}")
+            logger.debug("Deployment created successfully")
+            logger.info(f"Successfully created deployment {deployment.metadata.name} in namespace {namespace}")
         except client.exceptions.ApiException as e:
-            if e.status == 409:  # HTTP 409 Conflict - Pod already exists
-                logger.error(f"Pod {pod.metadata.name} already exists in namespace {namespace}")
-                logger.warning("To recreate the pod, first delete it with:")
-                logger.warning(f"kubectl delete pod {pod.metadata.name} -n {namespace}")
+            if e.status == 409:
+                logger.error(f"Deployment {deployment.metadata.name} already exists in namespace {namespace}")
+                logger.warning("To recreate the deployment, first delete it with:")
+                logger.warning(f"kubectl delete deployment {deployment.metadata.name} -n {namespace}")
                 exit(1)
             else:
-                logger.error(f"Failed to create pod: {e}")
-
+                logger.error(f"Failed to create deployment: {e}")
 
 if __name__ == "__main__":
     logger.debug("Starting script")
