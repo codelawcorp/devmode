@@ -2,21 +2,21 @@ import os
 import sys
 import fire
 import yaml
-import logging
+from logger import logger
 from kubernetes import client, config
 import sys
 
-logging.debug("Setting up logging and attempting to load kubeconfig")
+logger.debug("Setting up logging and attempting to load kubeconfig")
 try:
     kubeconfig = os.getenv("KUBECONFIG", "~/.kube/config")
-    logging.debug(f"Using kubeconfig path: {kubeconfig}")
+    logger.debug(f"Using kubeconfig path: {kubeconfig}")
     config.load_kube_config(config_file=kubeconfig)
 except config.config_exception.ConfigException as e:
-    logging.debug(f"Error loading kubeconfig: {e}")
-    print(f"Error loading kubeconfig: {e}")
+    logger.debug(f"Error loading kubeconfig: {e}")
+    logger.info(f"Error loading kubeconfig: {e}")
     sys.exit(1)
 
-logging.debug("Creating CoreV1 API client")
+logger.debug("Creating CoreV1 API client")
 # Create an API client for CoreV1
 V1_API = client.CoreV1Api()
 
@@ -52,32 +52,32 @@ def get_clean_pod_definition(pod_name, namespace="default"):
     Returns:
         V1Pod: Cleaned pod definition.
     """
-    logging.debug(f"Getting clean pod definition for {pod_name} in namespace {namespace}")
+    logger.debug(f"Getting clean pod definition for {pod_name} in namespace {namespace}")
     try:
         # Fetch the pod definition
-        logging.debug("Fetching pod definition from API")
+        logger.debug("Fetching pod definition from API")
         pod = V1_API.read_namespaced_pod(name=pod_name, namespace=namespace)
 
-        logging.debug("Removing redundant metadata fields")
+        logger.debug("Removing redundant metadata fields")
         # Remove redundant metadata fields
-        logging.debug("Setting pod.metadata.generate_name to None")
+        logger.debug("Setting pod.metadata.generate_name to None")
         pod.metadata.generate_name = None
-        logging.debug("Setting pod.metadata.managed_fields to None") 
+        logger.debug("Setting pod.metadata.managed_fields to None") 
         pod.metadata.managed_fields = None
-        logging.debug("Setting pod.metadata.creation_timestamp to None")
+        logger.debug("Setting pod.metadata.creation_timestamp to None")
         pod.metadata.creation_timestamp = None
-        logging.debug("Setting pod.metadata.resource_version to None")
+        logger.debug("Setting pod.metadata.resource_version to None")
         pod.metadata.resource_version = None
-        logging.debug("Setting pod.metadata.uid to None")
+        logger.debug("Setting pod.metadata.uid to None")
         pod.metadata.uid = None
-        logging.debug("Setting pod.metadata.self_link to None")
+        logger.debug("Setting pod.metadata.self_link to None")
         pod.metadata.self_link = None
-        logging.debug("Setting pod.metadata.generation to None")
+        logger.debug("Setting pod.metadata.generation to None")
         pod.metadata.generation = None
-        logging.debug("Setting pod.metadata.owner_references to None")
+        logger.debug("Setting pod.metadata.owner_references to None")
         pod.metadata.owner_references = None
 
-        logging.debug("Processing labels to remove")
+        logger.debug("Processing labels to remove")
         # Remove specific labels
         labels_to_remove = [
             # "app.kubernetes.io/instance", # This one ise used by service selector
@@ -90,19 +90,19 @@ def get_clean_pod_definition(pod_name, namespace="default"):
         ]
         
         if pod.metadata.labels:
-            logging.debug("Removing specified labels")
+            logger.debug("Removing specified labels")
             for label in labels_to_remove:
-                logging.debug(f"Removing label: {label}")
+                logger.debug(f"Removing label: {label}")
                 pod.metadata.labels.pop(label, None)
 
-        logging.debug("Clearing pod status")
+        logger.debug("Clearing pod status")
         # Clear status
         pod.status = None
 
         return pod
     except client.exceptions.ApiException as e:
-        logging.debug(f"API Exception when fetching pod: {e}")
-        print(f"Error fetching pod {pod_name} in namespace {namespace}: {e}")
+        logger.debug(f"API Exception when fetching pod: {e}")
+        logger.info(f"Error fetching pod {pod_name} in namespace {namespace}: {e}")
         return None
 
 
@@ -119,17 +119,17 @@ def modify_pod_for_dev_mode(pod):
     Returns:
         V1Pod: Modified pod definition.
     """
-    logging.debug("Starting pod modification for dev mode")
+    logger.debug("Starting pod modification for dev mode")
     if not pod:
-        logging.debug("Pod is None, returning None")
+        logger.debug("Pod is None, returning None")
         return None
 
-    logging.debug("Modifying containers")
+    logger.debug("Modifying containers")
     # Modify containers
     for container in pod.spec.containers:
-        logging.debug(f"Changing `{container.name}` container's command")
+        logger.debug(f"Changing `{container.name}` container's command")
         container.command = ["/bin/sh", "-c"]
-        logging.debug(f"Changing `{container.name}` container's args")
+        logger.debug(f"Changing `{container.name}` container's args")
         container.args = ["""
                 if command -v apt-get &> /dev/null; then
                     apt-get update && apt-get install -y git
@@ -146,21 +146,24 @@ def modify_pod_for_dev_mode(pod):
                 else
                     echo "Unsupported package manager. Please install git manually."
                 fi
+
+                          
+                chmod u+w /root # This is requried for vscode server to b
                 sleep infinity
                 """]
 
-        logging.debug("Setting security context")
+        logger.debug("Setting security context")
         # Set user ID to 0
         if not container.security_context:
             container.security_context = client.V1SecurityContext()
         container.security_context.run_as_user = 0
 
-        logging.debug("Removing probes")
+        logger.debug("Removing probes")
         # Remove probes
         container.liveness_probe = None
         container.readiness_probe = None
 
-        logging.debug("Handling container ports")
+        logger.debug("Handling container ports")
         # Handle ports
         if not container.ports:
             container.ports = [client.V1ContainerPort(container_port=8080)]
@@ -169,14 +172,14 @@ def modify_pod_for_dev_mode(pod):
                 if not port.container_port:
                     port.container_port = 8080
 
-    logging.debug("Updating pod name")
+    logger.debug("Updating pod name")
     # Append "-devmode" to pod name
     pod.metadata.name += "-devmode"
 
-    logging.debug("Clearing pod security context")
+    logger.debug("Clearing pod security context")
     pod.spec.security_context = None
 
-    logging.debug("Processing volumes and mounts")
+    logger.debug("Processing volumes and mounts")
     # Remove specific volumes and their mounts
     if pod.spec.volumes:
         volumes_to_keep = []
@@ -185,7 +188,7 @@ def modify_pod_for_dev_mode(pod):
                 volumes_to_keep.append(vol)
         pod.spec.volumes = volumes_to_keep
 
-        logging.debug("Removing corresponding volume mounts")
+        logger.debug("Removing corresponding volume mounts")
         # Remove corresponding volume mounts
         for container in pod.spec.containers:
             if container.volume_mounts:
@@ -194,14 +197,14 @@ def modify_pod_for_dev_mode(pod):
                     if not (mount.name.startswith("kube-api-access") or mount.name == "eks-pod-identity-token")
                 ]
 
-    logging.debug("Removing node name")
+    logger.debug("Removing node name")
     # Remove node_name
     pod.spec.node_name = None
 
     return pod
 
 
-def main(pod_name, namespace="default"):
+def start(pod_name, namespace="default"):
     """
     Main function to fetch, modify, and print the pod definition in YAML format.
 
@@ -209,24 +212,60 @@ def main(pod_name, namespace="default"):
         pod_name (str): The name of the pod.
         namespace (str): The namespace of the pod (default: "default").
     """
-    logging.debug(f"Starting main function with pod_name={pod_name}, namespace={namespace}")
+    logger.debug(f"Starting main function with pod_name={pod_name}, namespace={namespace}")
     pod = modify_pod_for_dev_mode(get_clean_pod_definition(pod_name, namespace))
     if pod:
-        logging.debug("Dumping pod definition to YAML")
-        print(yaml.dump(pod.to_dict(), default_flow_style=False))
+        logger.debug("Dumping pod definition to YAML")
+        logger.debug(yaml.dump(pod.to_dict(), default_flow_style=False))
+        # Create PVC for the pod
+        pvc = client.V1PersistentVolumeClaim(
+            metadata=client.V1ObjectMeta(
+                name=f"{pod.metadata.name}-pvc",
+                namespace=namespace
+            ),
+            spec=client.V1PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteOnce"],
+                resources=client.V1ResourceRequirements(
+                    requests={"storage": "2Gi"}
+                ),
+                storage_class_name="gp2"
+            )
+        )
+
         try:
-            logging.debug("Attempting to create pod in cluster")
+            logger.debug("Creating PVC")
+            V1_API.create_namespaced_persistent_volume_claim(
+                namespace=namespace,
+                body=pvc
+            )
+            logger.info(f"Created PVC {pvc.metadata.name}")
+        except client.exceptions.ApiException as e:
+            if e.status == 409:
+                logger.warning(f"PVC {pvc.metadata.name} already exists")
+            else:
+                logger.error(f"Failed to create PVC: {e}")
+                raise
+        try:
+            logger.debug("Attempting to create pod in cluster")
+            
             V1_API.create_namespaced_pod(
                 body=pod,
                 namespace=namespace
             )
-            logging.debug("Pod created successfully")
-            print(f"Successfully created pod {pod.metadata.name} in namespace {namespace}")
+            logger.debug("Pod created successfully")
+            logger.info(f"Successfully created pod {pod.metadata.name} in namespace {namespace}")
         except client.exceptions.ApiException as e:
-            logging.debug(f"Failed to create pod: {e}")
-            print(f"Failed to create pod: {e}")
+            if e.status == 409:  # HTTP 409 Conflict - Pod already exists
+                logger.error(f"Pod {pod.metadata.name} already exists in namespace {namespace}")
+                logger.warning("To recreate the pod, first delete it with:")
+                logger.warning(f"kubectl delete pod {pod.metadata.name} -n {namespace}")
+                exit(1)
+            else:
+                logger.error(f"Failed to create pod: {e}")
 
 
 if __name__ == "__main__":
-    logging.debug("Starting script")
-    fire.Fire(main)
+    logger.debug("Starting script")
+    fire.Fire({
+        'start': start
+    })
