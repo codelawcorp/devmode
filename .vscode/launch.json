@@ -46,6 +46,22 @@
             "env": {
                 // "PYTHONPATH": "${workspaceFolder}"
             }
+        },
+        {
+            "name": "Python: Recreate Devmode Workspaces",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "recreate",
+                "risk-rule-engine-server-mblp7t3v33mf-devmode",
+                "human-risk"
+            ],
+            // "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}"
+            }
         }
     ]
 }

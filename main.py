@@ -6,6 +6,8 @@ from logger import logger
 from kubernetes import client, config
 import sys
 import socket
+import base64
+
 logger.debug("Setting up logging and attempting to load kubeconfig")
 try:
     kubeconfig = os.getenv("KUBECONFIG", "~/.kube/config")
@@ -167,7 +169,7 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
 
     return deployment, pvc_name
 
-def start(deployment_name, namespace="default", workspace_name = None, workspace_path = "/app"):
+def start_workspace(deployment_name, namespace="default", workspace_name = None, workspace_path = "/app"):
     if workspace_name is None:
         logger.debug("No workspace name provided, using hostname")
         global WORKSPACE_NAME 
@@ -264,6 +266,7 @@ def start(deployment_name, namespace="default", workspace_name = None, workspace
         ),
         string_data={
             "deployment_name": deployment_result.metadata.name, 
+            "original_deployment_name": deployment_name,
             "pvc_name": pvc_result.metadata.name
         }
     )
@@ -332,7 +335,6 @@ def delete_workspace(secret_name, namespace="default"):
         secret_name (str): Name of the secret/workspace to delete
         namespace (str): Namespace where the workspace exists (default: default)
     """
-    import base64
     logger.debug(f"Deleting workspace {secret_name} in namespace {namespace}")
     
     try:
@@ -404,11 +406,44 @@ def delete_workspace(secret_name, namespace="default"):
         logger.error(f"Failed to delete workspace: {e}")
         sys.exit(1)
 
+def recreate_workspace(workspace_name, namespace="default"):
+    """
+    Recreates a workspace by deleting the existing one and starting a new one.
+    
+    Args:
+        workspace_name (str): The name of the workspace to recreate.
+        namespace (str): The namespace of the workspace (default: "default").
+    """
+    logger.debug(f"Attempting to recreate workspace {workspace_name} in namespace {namespace}")
+    
+    # Get original deployment name from secret before deletion
+    try:
+        secret = V1_API.read_namespaced_secret(
+            name=workspace_name,
+            namespace=namespace
+        )
+        original_deployment_name = base64.b64decode(secret.data["original_deployment_name"]).decode('utf-8')
+        logger.debug(f"Retrieved original deployment name from secret: {original_deployment_name}")
+    except client.exceptions.ApiException as e:
+        logger.error(f"Failed to get secret for workspace {workspace_name}: {e}")
+        sys.exit(1)
+    
+    # Delete existing workspace
+    delete_workspace(workspace_name, namespace)
+    
+    # Start new workspace
+    start_workspace(original_deployment_name, namespace)
+    
+    logger.info(f"Successfully recreated workspace {workspace_name}")
+
+
+
+
 if __name__ == "__main__":
     logger.debug("Starting script")
     fire.Fire({
-        'start': start,
+        'start': start_workspace,
         'list': list_workspaces,
         'delete': delete_workspace,
-        # 'update': update_workspace
+        'recreate': recreate_workspace
     })
