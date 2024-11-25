@@ -2,13 +2,44 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Get Pod Definition",
+            "name": "Python: Start Devmode Workspace",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "args": [
-                "risk-rule-engine-server-5b77b98db8-2xppq",
+                "start",
+                "risk-rule-engine-server",
                 "human-risk"  // assuming default namespace, change if needed
+            ],
+            // "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Python: List Devmode Workspaces",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "list"
+            ],
+            // "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Python: Delete Devmode Workspaces",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "delete",
+                "risk-rule-engine-server-mblp7t3v33mf-devmode",
+                "human-risk"
             ],
             // "console": "integratedTerminal",
             "justMyCode": true,
