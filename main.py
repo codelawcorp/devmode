@@ -109,6 +109,53 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
         if not container.security_context:
             container.security_context = client.V1SecurityContext()
         container.security_context.run_as_user = 0
+        # Add CAP_SYS_ADMIN capability
+        if not container.security_context.capabilities:
+            container.security_context.capabilities = client.V1Capabilities()
+        if not container.security_context.capabilities.add:
+            container.security_context.capabilities.add = []
+        container.security_context.capabilities.add.append("SYS_ADMIN")
+        # Add all required capabilities
+        container.security_context.capabilities.add.extend([
+            "AUDIT_CONTROL",
+            "AUDIT_WRITE", 
+            "BLOCK_SUSPEND",
+            "BPF",
+            "CHOWN",
+            "DAC_OVERRIDE",
+            "DAC_READ_SEARCH",
+            "FOWNER",
+            "FSETID",
+            "IPC_LOCK",
+            "IPC_OWNER", 
+            "KILL",
+            "LEASE",
+            "LINUX_IMMUTABLE",
+            "MAC_ADMIN",
+            "MAC_OVERRIDE",
+            "MKNOD",
+            "NET_ADMIN",
+            "NET_BIND_SERVICE",
+            "NET_BROADCAST",
+            "NET_RAW",
+            "PERFMON",
+            "SETFCAP",
+            "SETGID",
+            "SETPCAP",
+            "SETUID",
+            "SYS_BOOT",
+            "SYS_CHROOT",
+            "SYS_MODULE",
+            "SYS_NICE",
+            "SYS_PACCT",
+            "SYS_PTRACE",
+            "SYS_RAWIO",
+            "SYS_RESOURCE",
+            "SYS_TIME",
+            "SYS_TTY_CONFIG",
+            "WAKE_ALARM"
+        ])
+        
 
         logger.debug("Removing probes")
         container.liveness_probe = None
@@ -265,9 +312,11 @@ def start_workspace(deployment_name, namespace="default", workspace_name = None,
             labels={"tool": "devmode"}
         ),
         string_data={
+            "workspace_name": WORKSPACE_NAME,
             "deployment_name": deployment_result.metadata.name, 
             "original_deployment_name": deployment_name,
-            "pvc_name": pvc_result.metadata.name
+            "pvc_name": pvc_result.metadata.name,
+            "workspace_path": workspace_path
         }
     )
 
@@ -307,12 +356,13 @@ def list_workspaces():
             secret_name = secret.metadata.name
             namespace = secret.metadata.namespace
             # Workspace name is same as secret name
-            workspace_name = secret_name
-            table_data.append([secret_name, namespace, workspace_name])
+            workspace_name = base64.b64decode(secret.data["workspace_name"]).decode('utf-8') if secret.data.get("workspace_name") else None
+            original_deployment_name = base64.b64decode(secret.data["original_deployment_name"]).decode('utf-8') if secret.data.get("original_deployment_name") else None
+            table_data.append([workspace_name, original_deployment_name, namespace])
 
         logger.debug("Creating table with tabulate")
         # Create and display table using tabulate
-        headers = ["Secret Name", "Namespace", "Workspace Name"]
+        headers = ["Workspace Name", "Original Deployment", "Namespace", ]
         from tabulate import tabulate
         table = tabulate(
             table_data,
@@ -406,7 +456,7 @@ def delete_workspace(secret_name, namespace="default"):
         logger.error(f"Failed to delete workspace: {e}")
         sys.exit(1)
 
-def recreate_workspace(workspace_name, namespace="default"):
+def recreate_workspace(workspace_name, namespace="default", new_workspace_path=None):
     """
     Recreates a workspace by deleting the existing one and starting a new one.
     
@@ -423,6 +473,7 @@ def recreate_workspace(workspace_name, namespace="default"):
             namespace=namespace
         )
         original_deployment_name = base64.b64decode(secret.data["original_deployment_name"]).decode('utf-8')
+        workspace_path = base64.b64decode(secret.data["workspace_path"]).decode('utf-8')
         logger.debug(f"Retrieved original deployment name from secret: {original_deployment_name}")
     except client.exceptions.ApiException as e:
         logger.error(f"Failed to get secret for workspace {workspace_name}: {e}")
@@ -432,7 +483,7 @@ def recreate_workspace(workspace_name, namespace="default"):
     delete_workspace(workspace_name, namespace)
     
     # Start new workspace
-    start_workspace(original_deployment_name, namespace)
+    start_workspace(original_deployment_name, namespace, workspace_path=new_workspace_path or workspace_path)
     
     logger.info(f"Successfully recreated workspace {workspace_name}")
 
