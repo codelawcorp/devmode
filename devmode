@@ -219,7 +219,9 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
 
 def start_workspace(deployment_name, namespace="default", workspace_name = None, workspace_path = "/app"):
     """
-    This creates new deployment with elevated permissions and a PVC to store the workspace.
+    This creates a copy of the specified deployment, but with elevated permissions and a PVC (to store the workspace).
+    Example:
+    `devmode start --deployment_name risk-rule-engine-server  --namespace human-risk --workspace-path=/app`
 
     Args:
         deployment_name (str): The name of the deployment.
