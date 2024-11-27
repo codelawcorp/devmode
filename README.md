@@ -52,6 +52,8 @@ Open terminal in VScode and clone your repo:
 
 
 ## Development Instructions
+Run with `LOG_LEVEL=debug devmode list` to see debug logs.   
+
 use `.vscode/launch.json` 
 `devmode -- --interactive`
 `devmode -- --trace	`
