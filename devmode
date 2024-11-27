@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import os
 import sys
 import fire
@@ -217,12 +218,8 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
     return deployment, pvc_name
 
 def start_workspace(deployment_name, namespace="default", workspace_name = None, workspace_path = "/app"):
-    if workspace_name is None:
-        logger.debug("No workspace name provided, using hostname")
-        global WORKSPACE_NAME 
-        WORKSPACE_NAME = socket.gethostname().lower().replace('_','-')
     """
-    Main function to fetch, modify, and create the deployment in dev mode.
+    This creates new deployment with elevated permissions and a PVC to store the workspace.
 
     Args:
         deployment_name (str): The name of the deployment.
@@ -230,7 +227,12 @@ def start_workspace(deployment_name, namespace="default", workspace_name = None,
         workspace_name (str): The name of the workspace (default: hostname).
         workspace_path (str): The path to the workspace, ideally where the code is COPY-ed in Dockerfile (default: "/app").
         
+        
     """
+    if workspace_name is None:
+        logger.debug("No workspace name provided, using hostname")
+        global WORKSPACE_NAME 
+        WORKSPACE_NAME = socket.gethostname().lower().replace('_','-')
     logger.debug(f"Starting main function with deployment_name={deployment_name}, namespace={namespace}")
     (deployment, pvc_name) = modify_deployment_for_dev_mode(get_deployment_definition(deployment_name, namespace), workspace_path)
 
