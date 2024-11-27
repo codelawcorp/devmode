@@ -25,6 +25,41 @@ logger.debug("Creating API clients")
 V1_API = client.CoreV1Api()
 APPS_API = client.AppsV1Api()
 
+def find_workspace_secret(workspace_name, namespace):
+    """Find the secret associated with a workspace.
+    
+    Args:
+        workspace_name (str): Name of the workspace to find
+        namespace (str): Namespace to search in
+        
+    Returns:
+        str: Name of the secret if found
+        
+    Raises:
+        SystemExit: If secret not found or API error occurs
+    """
+    logger.debug("Getting secrets with tool=devmode label")
+    try:
+        secrets = V1_API.list_namespaced_secret(
+            namespace=namespace,
+            label_selector="tool=devmode"
+        )
+        
+        logger.debug("Filtering secrets to find matching workspace")
+        for secret in secrets.items:
+            if secret.data.get("workspace_name"):
+                decoded_name = base64.b64decode(secret.data["workspace_name"]).decode('utf-8')
+                if decoded_name == workspace_name:
+                    return secret
+                    
+        logger.error(f"No workspace found with name {workspace_name} in namespace {namespace}")
+        sys.exit(1)
+        
+    except client.exceptions.ApiException as e:
+        logger.error(f"Failed to list secrets: {e}")
+        sys.exit(1)
+
+
 def get_deployment_definition(deployment_name, namespace="default"):
     """
     Fetches the deployment definition from the Kubernetes cluster.
@@ -235,6 +270,8 @@ def start_workspace(deployment_name, namespace="default", workspace_name = None,
         logger.debug("No workspace name provided, using hostname")
         global WORKSPACE_NAME 
         WORKSPACE_NAME = socket.gethostname().lower().replace('_','-')
+    else:
+        WORKSPACE_NAME = workspace_name
     logger.debug(f"Starting main function with deployment_name={deployment_name}, namespace={namespace}")
     (deployment, pvc_name) = modify_deployment_for_dev_mode(get_deployment_definition(deployment_name, namespace), workspace_path)
 
@@ -382,35 +419,25 @@ def list_workspaces():
         logger.error(f"Failed to list workspaces: {e}")
         sys.exit(1)
 
-def delete_workspace(secret_name, namespace="default"):
+def delete_workspace(workspace_name, namespace="default"):
     """Delete a devmode workspace and associated resources.
     
     Args:
-        secret_name (str): Name of the secret/workspace to delete
+        workspace_name (str): Name of the secret/workspace to delete
         namespace (str): Namespace where the workspace exists (default: default)
     """
-    logger.debug(f"Deleting workspace {secret_name} in namespace {namespace}")
-    
+    logger.debug(f"Deleting workspace {workspace_name} in namespace {namespace}")
+            
+    secret = find_workspace_secret(workspace_name, namespace)
+    secret_name = secret.metadata.name
     try:
-        logger.debug(f"Reading secret {secret_name}")
-        try:
-            secret = V1_API.read_namespaced_secret(
-                name=secret_name,
-                namespace=namespace
-            )
-        except client.exceptions.ApiException as e:
-            if e.status == 404:
-                logger.error(f"Secret {secret_name} not found in namespace {namespace}")
-                sys.exit(1)
-            raise
-        
         logger.debug("Extracting resource names from secret")
         # Extract UIDs from secret data
         deployment_name = base64.b64decode(secret.data.get("deployment_name")).decode() if secret.data.get("deployment_name") else None
         pvc_name = base64.b64decode(secret.data.get("pvc_name")).decode() if secret.data.get("pvc_name") else None
         
         if deployment_name:
-            logger.debug(f"Attempting to delete deployment {secret_name}")
+            logger.debug(f"Attempting to delete deployment {deployment_name}")
             # Delete deployment
             try:
                 APPS_API.delete_namespaced_deployment(
@@ -426,7 +453,7 @@ def delete_workspace(secret_name, namespace="default"):
                     raise
         
         if pvc_name:
-            logger.debug(f"Attempting to delete PVC {secret_name}")
+            logger.debug(f"Attempting to delete PVC {pvc_name}")
             # Delete PVC
             try:
                 V1_API.delete_namespaced_persistent_volume_claim(
@@ -472,10 +499,7 @@ def recreate_workspace(workspace_name, namespace="default", new_workspace_path=N
     
     # Get original deployment name from secret before deletion
     try:
-        secret = V1_API.read_namespaced_secret(
-            name=workspace_name,
-            namespace=namespace
-        )
+        secret = find_workspace_secret(workspace_name, namespace)
         original_deployment_name = base64.b64decode(secret.data["original_deployment_name"]).decode('utf-8')
         workspace_path = base64.b64decode(secret.data["workspace_path"]).decode('utf-8')
         logger.debug(f"Retrieved original deployment name from secret: {original_deployment_name}")
@@ -487,7 +511,7 @@ def recreate_workspace(workspace_name, namespace="default", new_workspace_path=N
     delete_workspace(workspace_name, namespace)
     
     # Start new workspace
-    start_workspace(original_deployment_name, namespace, workspace_path=new_workspace_path or workspace_path)
+    start_workspace(original_deployment_name, namespace, workspace_name=workspace_name, workspace_path=new_workspace_path or workspace_path)
     
     logger.info(f"Successfully recreated workspace {workspace_name}")
 

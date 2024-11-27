@@ -36,7 +36,7 @@ echo "export PATH=$PATH:~/scripts/devmode" >> ~/.zshrc
 
 This tool requires an existing deployemnt to be cloned.  
 Start the workspace:  
-`devmode start --deployment_name risk-rule-engine-server  --namespace human-risk`  
+`devmode start --deployment_name risk-rule-engine-server  --namespace human-risk --workspace_name name-surname`  
 
 Note: Git credentials are handled automatically by VSCode's built-in credential management. You do not need to manually configure credentials inside the container:  
 For the first time, clone any repo from your private VCS with API token (not SSH) - that will store your credentials in `credentials-helper` store.
