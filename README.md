@@ -4,7 +4,7 @@ DevMode is a command-line interface (CLI) tool implemented in Python that facili
 
 This tool provides several advantages over existing solutions:
 
-- Compared to [Devcontainer](https://containers.dev/), DevMode enables development directly in a development EKS environment, providing greater parity with production compared to local solutions like docker-compose or Minikube.
+- Compared to [Devcontainer](https://containers.dev/), **DevMode enables development directly in a `dev` EKS environment, providing greater parity with production compared to local solutions like docker-compose or Minikube**
 
 - While similar in functionality to [DevPod](https://devpod.sh/), DevMode offers a streamlined, transparent codebase that can be readily customized to specific requirements, eliminating opaque error handling.
 
