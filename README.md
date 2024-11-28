@@ -28,13 +28,17 @@ Add this tool to your PATH for easy access:
 ```bash
 mkdir -p ~/scripts
 ln -s "$(pwd)/devmode" ~/scripts/devmode
-echo "export PATH=$PATH:~/scripts/devmode" >> ~/.zshrc
+echo "export PATH=$PATH:~/scripts" >> ~/.zshrc
 ```
 
 ## Usage
+`aws eks update-kubeconfig --alias "mc-elevate-dev-eu-west-2" --name main --profile "mc-elevate-dev" --region "eu-west-2" --kubeconfig ~/.kube/"mc-elevate-dev-eu-west-2"`  Configure EKS dev kubeconfig.
+`aws sso login --profile mc-elevate-prod`  - Authenticate to AWS (EKS).  
+
+
+DevMode tool requires an existing deployemnt to be cloned.  
 `devmode --help`  
 
-This tool requires an existing deployemnt to be cloned.  
 Start the workspace:  
 `devmode start --deployment_name risk-rule-engine-server  --namespace human-risk --workspace_name name-surname`  
 
