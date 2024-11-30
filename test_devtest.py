@@ -25,24 +25,24 @@ def temp_namespace():
 
 
 
-@pytest.fixture(scope="class")
-def sample_deployment(temp_namespace):
+@pytest.fixture(scope="class", params=["sample-deployment", "sample-deployment-2"])
+def sample_deployment(temp_namespace, request):
     # Create a deployment
     apps_api = client.AppsV1Api()
     deployment = client.V1Deployment(
         metadata=client.V1ObjectMeta(
-            name="sample-deployment",
+            name=request.param,
             namespace=temp_namespace,
-            labels={"app": "sample-app"}
+            labels={"app": request.param}
         ),
         spec=client.V1DeploymentSpec(
             replicas=1,
             selector=client.V1LabelSelector(
-                match_labels={"app": "sample-app"}
+                match_labels={"app": request.param}
             ),
             template=client.V1PodTemplateSpec(
                 metadata=client.V1ObjectMeta(
-                    labels={"app": "sample-app"}
+                    labels={"app": request.param}
                 ),
                 spec=client.V1PodSpec(
                     containers=[
@@ -77,7 +77,7 @@ def sample_deployment(temp_namespace):
     # Cleanup
     try:
         apps_api.delete_namespaced_deployment(
-            name="sample-deployment",
+            name=request.param,
             namespace=temp_namespace
         )
     except client.rest.ApiException:
@@ -104,6 +104,19 @@ class TestDevmode:
         assert deployment in secret_name
         assert deployment in pvc_name
         assert workspace_name =="test-workspace"
+
+        # Assert that the deployment has all pods running
+        from kubernetes import watch
+        V1_API = client.CoreV1Api()
+
+        w = watch.Watch()
+        for event in w.stream(V1_API.list_namespaced_pod, namespace=temp_namespace, label_selector=f"app={deployment}", timeout_seconds=40):
+            pod = event['object']
+            if pod.status.phase == "Running":
+                break
+        else:
+            for pod in V1_API.list_namespaced_pod(namespace=temp_namespace, label_selector=f"app={deployment}").items:
+                assert pod.status.phase == "Running", f"Pod {pod.metadata.name} is not running"
 
         # self.workspace_name = workspace_name
 
