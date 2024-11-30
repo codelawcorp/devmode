@@ -27,7 +27,7 @@ On macOS, you can add the script to your PATH by:
 Add this tool to your PATH for easy access:
 ```bash
 mkdir -p ~/scripts
-ln -s "$(pwd)/devmode" ~/scripts/devmode
+ln -s "$(pwd)/devmode.py" ~/scripts/devmode
 echo "export PATH=$PATH:~/scripts" >> ~/.zshrc
 ```
 
@@ -48,11 +48,17 @@ Git crentials are propagated automatically by VScode magic. (It sets `GIT_ASKPAS
 
 
 Connect to the container newly created container with [VScode](https://code.visualstudio.com/docs/devcontainers/attach-container#_attach-to-a-container-in-a-kubernetes-cluster)  
-Open the workspace_path in VScode.    
+Open the `workspace_path` in VScode.    
 Open terminal in VScode and clone your repo:
 `git clone <your_repo_url> .`
 
 🎊  
+
+## Contribution
+- Enable creating a pod's clone. Now you can clone only Deployment.
+- Enable non gp2 StorageClass (or use default)
+- Enable Specifying a custom image.
+- Super contribution - launch the image built from Dockerfile.
 
 
 ## Development Instructions
@@ -62,3 +68,5 @@ use `.vscode/launch.json`
 `devmode -- --interactive`
 `devmode -- --trace	`
 
+### Testing
+It uses `pytest` and a custom fixture which creates a temporary namespace.  
