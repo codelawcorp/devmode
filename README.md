@@ -54,7 +54,18 @@ Open terminal in VScode and clone your repo:
 
 🎊  
 
-## Contribution
+
+
+## Development Instructions
+- Install git hooks. Run this command `git config core.hooksPath .githooks`. 
+
+Run with `LOG_LEVEL=debug devmode list` to see debug logs.   
+
+use `.vscode/launch.json` 
+`devmode -- --interactive`
+`devmode -- --trace	`
+
+### Contribution
 - Show informative error when aws logged out
 - Refactor, create `Workspace` class  
 - Change selector to avoid interering with existing service. Find service, ingress and create clones with `-devmode` prefix.  
@@ -63,13 +74,6 @@ Open terminal in VScode and clone your repo:
 - Enable Specifying a custom image.
 - Super contribution - launch the image built from Dockerfile.
 
-
-## Development Instructions
-Run with `LOG_LEVEL=debug devmode list` to see debug logs.   
-
-use `.vscode/launch.json` 
-`devmode -- --interactive`
-`devmode -- --trace	`
 
 ### Testing
 It uses `pytest` and a custom fixture which creates a temporary namespace.  
