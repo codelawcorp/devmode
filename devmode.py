@@ -59,7 +59,6 @@ def find_workspace_secret(workspace_name, namespace):
         logger.error(f"Failed to list secrets: {e}")
         sys.exit(1)
 
-
 def get_deployment_definition(deployment_name, namespace="default"):
     """
     Fetches the deployment definition from the Kubernetes cluster.
@@ -80,7 +79,6 @@ def get_deployment_definition(deployment_name, namespace="default"):
         logger.debug(f"API Exception when fetching deployment: {e}")
         logger.error(f"Error fetching deployment {deployment_name} in namespace {namespace}: {e}")
         exit(1)
-
 
 def modify_deployment_for_dev_mode(deployment, workspace_path):
     """

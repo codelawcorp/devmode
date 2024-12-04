@@ -55,6 +55,9 @@ Open terminal in VScode and clone your repo:
 🎊  
 
 ## Contribution
+- Show informative error when aws logged out
+- Refactor, create `Workspace` class  
+- Change selector to avoid interering with existing service. Find service, ingress and create clones with `-devmode` prefix.  
 - Enable creating a pod's clone. Now you can clone only Deployment.
 - Enable non gp2 StorageClass (or use default)
 - Enable Specifying a custom image.
@@ -70,3 +73,4 @@ use `.vscode/launch.json`
 
 ### Testing
 It uses `pytest` and a custom fixture which creates a temporary namespace.  
+EKS cluster must be connected.

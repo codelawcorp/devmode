@@ -103,7 +103,7 @@ class TestDevmode:
         assert deployment in deployment_name
         assert deployment in secret_name
         assert deployment in pvc_name
-        assert workspace_name =="test-workspace"
+        assert workspace_name == "test-workspace"
 
         # Assert that the deployment has all pods running
         from kubernetes import watch
