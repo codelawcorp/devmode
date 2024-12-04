@@ -34,6 +34,8 @@ Compared to docker-compose, developing directly within Kubernetes provides a nar
     - Care must be taken to ensure that docker-compose environment variables and secrets match those defined in Helm charts.  
     - When passing secrets and variables via file (the recommended approach), mount paths must match between the local environment and the Pod.  
 
+These obstacles hit especially hard freshly onboarded developers when they encounter unseen stacktraces.  
+
 #### Faster iterations
 `prod` <- `stg` <- `dev` <- ~~`local`~~  
 You do not have to wait for CI/CD to complete in `dev` environment to test because you are developing in `dev` environment.
