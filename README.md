@@ -12,7 +12,7 @@ Better to say - allows to focus on things you should really control instead of w
 
 
 #### Less errros
-- Compared to `docker-compose`, Developing inside right inside Kubernetes provides a **lesser scope of potential errors**. Locally there are to many things you have to do imitate parity. Here is the list of pitfalls added when you develop locally:
+Compared to `docker-compose`, developing right inside Kubernetes provides a **lesser scope of potential errors**. Locally there are to many things you have to do imitate parity. Here is the list of pitfalls added when you develop locally:
     - docker-compose:
         - yaml syntax errors
         - Docker VM configuration discrepancies
