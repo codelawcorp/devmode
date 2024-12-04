@@ -12,26 +12,27 @@ Better to say - allows to focus on things you should really control instead of w
 
 
 #### Less errros
-Compared to `docker-compose`, developing right inside Kubernetes provides a **lesser scope of potential errors**. Locally there are to many things you have to do achieve parity (simulate Pod). Here is the list of pitfalls added when you develop locally:  
-    - docker-compose:  
-        - yaml syntax errors  
-        - Docker VM configuration discrepancies  
-        - 
-    - AWS IAM access:  
-        - The mechanism of passing credentials is different and causes errors time-to-time.  
-        - Develer's IAM role might be more powerful than pods's IAM role causing autorization errors later.  
-    - Kubernetes controlplane:  
-        - If applicaiton communicates to controlplane it uses your local kubeconfig with your own permissions, which often has a broader set of permissions than the real serviceaccount.  
-        - Kubernetes mounts serviceaccont token into well-known pat, which requires a workaround in local devlopment: Code includes `if` statements which runs exclusively in `local`.  
-    - AWS Network and DNS:  
-        - Not all AWS VPC private DNS names are resolved locally.  
-        - Even with VPN not all network resources are reachable due to SG.  
-    - Kubernetes Network and DNS:  
-        - You can not query Kubernetes Service by DNS name. You use docker-compose service name instead which makes developer to write risky `if` statements in code.  
-        - Pods', services' private IPs can be accessed locally if needed.  
-    - Reading secrets and variables:  
-        - You have to stay vigilant that docker-compose env vars and secret match those in Helm.  
-        - If passing secrets and variables via file (recommended way), mount paths must match locally and inside pod.  
+Compared to docker-compose, developing directly within Kubernetes provides a narrower scope of potential errors. Achieving parity when developing locally requires simulating a Pod environment, which introduces additional complexity. Below is a comprehensive list of pitfalls that arise during local development:  
+
+- docker-compose  
+    - YAML syntax errors  
+    - Docker VM configuration discrepancies  
+    - Lack of parity with Kubernetes networking and service discovery  
+- AWS IAM Access  
+    - The mechanism for passing credentials differs, occasionally causing errors.  
+    - The developer's IAM role is often more powerful than the Pod's IAM role, leading to authorization errors during production.  
+- Kubernetes Control Plane  
+    - If the application interacts with the Kubernetes control plane, it relies on your local kubeconfig with your own permissions, which usually include a broader set of privileges than the service account used in a real Pod.  
+    - Kubernetes automatically mounts a service account token into a well-known path within Pods. To replicate this locally, developers often add conditional logic (if statements) in the code exclusively for local development.  
+- AWS Network and DNS  
+    - AWS VPC private DNS names are not fully resolvable from a local environment.  
+    - Even with a VPN, some network resources may remain unreachable due to security group configurations.  
+- Kubernetes Network and DNS  
+    - Kubernetes Services cannot be queried by their DNS names locally. Developers rely on docker-compose service names instead, often necessitating risky conditional logic in the code.  
+    - Pods and Services’ private IPs may not be accessible from the local environment, leading to potential discrepancies.  
+- Reading Secrets and Variables  
+    - Care must be taken to ensure that docker-compose environment variables and secrets match those defined in Helm charts.  
+    - When passing secrets and variables via file (the recommended approach), mount paths must match between the local environment and the Pod.  
 
 #### Faster iterations
 `prod` <- `stg` <- `dev` <- ~~`local`~~  
