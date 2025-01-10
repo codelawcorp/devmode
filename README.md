@@ -33,7 +33,8 @@ DevMode tool requires an existing deployemnt to be cloned.
 - Make sure you are using the correct KUBECONFIG and context
 
 Start the workspace:  
-`devmode start --deployment_name <deployment>  --namespace <namespace> --workspace_name <your nickname>`
+`devmode start <workspacename <namespace> <original deployment>`
+`devmode start magzim21 my-app my-deployment`
 
 Good news! VSCode propagates your local git credentials into pod automatically. When you push/pull your code, it will not ask for password. For this to work, credentials must be stored locally via `credentials-helper` store. (Inside pod vscode sets `GIT_ASKPASS` environment variable with a magic script).
 
