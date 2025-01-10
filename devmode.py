@@ -145,14 +145,18 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
         if not container.security_context:
             container.security_context = client.V1SecurityContext()
         container.security_context.run_as_user = 0
-        # Add CAP_SYS_ADMIN capability
+        
+        container.security_context.privileged = True
+        container.security_context.allow_privilege_escalation = True
+        container.security_context.read_only_root_filesystem = False
+
         if not container.security_context.capabilities:
             container.security_context.capabilities = client.V1Capabilities()
         if not container.security_context.capabilities.add:
             container.security_context.capabilities.add = []
-        container.security_context.capabilities.add.append("SYS_ADMIN")
+        container.security_context.capabilities.add.append("SYS_ADMIN") # why not all in one list
         # Add all required capabilities
-        container.security_context.capabilities.add.extend([
+        container.security_context.capabilities.add.extend([ # What is extend
             "AUDIT_CONTROL",
             "AUDIT_WRITE", 
             "BLOCK_SUSPEND",
