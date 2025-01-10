@@ -37,42 +37,58 @@ class Config:
 
 
 class Workspace:
-    """ "
-    A class to manage Kubernetes workloads, but in development mode.
+    """
+    A class to manage Kubernetes workloads in development mode.
+
+    Attributes:
+        workspace_name (str): The name of the workspace.
+        namespace (str): The namespace of the deployment.
+        original_deployment_name (str): The original name of the deployment.
+        workspace_path (str): The path to the workspace.
+
+    Methods:
+        start():
+            Creates a copy of the specified deployment with elevated permissions and a PVC.
+        delete():
+            Deletes a devmode workspace and associated resources.
+        recreate(new_workspace_path=None):
+        _modify_deployment_for_dev_mode(deployment, workspace_path):
+            Modifies the deployment definition for development mode.
+        list_workspaces(namespace=None):
+            Lists all devmode workspaces across all namespaces.
     """
 
     def __init__(self, workspace_name, namespace, deployment_name, workspace_path=None):
-
-        self.original_deployment_name = deployment_name
-        self.deployment_name = (
-            f"{self.original_deployment_name}-devmode-{workspace_name}"
-        )
-        self.pvc_name = f"{self.original_deployment_name}-devmode-{workspace_name}"
-        self.secret_name = f"{self.original_deployment_name}-devmode-{workspace_name}"
-        self.namespace = namespace
         self.workspace_name = workspace_name
+        self.prefix = f"devmode-{workspace_name}"
+        self.namespace = namespace
+        self.original_deployment_name = deployment_name
+        self.deployment_name = f"{self.original_deployment_name}-{self.prefix}"
+        self.pvc_name = f"{self.original_deployment_name}-{self.prefix}"
+        self.secret_name = f"{self.original_deployment_name}-{self.prefix}"
+        self.service_name = None
+        self.ingress_name = None
         self.workspace_path = workspace_path or "/app"
+
+        self.labels = {
+            "app.kubernetes.io/instance": self.original_deployment_name,
+            "tool": "devmode",
+            "workspace": self.workspace_name,
+        }
 
         Config.setup_kubernetes_client()
 
     def start(self):
+        """Start a devmode workspace.
+
+        This command creates a new Kubernetes deployment with a Persistent Volume Claim (PVC)
+        attached and elevated privileges for development purposes.
         """
-        This creates a copy of the specified deployment, but with elevated permissions and a PVC (to store the workspace).
-        Example:
-        `devmode start --deployment_name risk-rule-engine-server  --namespace human-risk --workspace-path=/app`
-
-        Args:
-            namespace (str): The namespace of the deployment (default: "default").
-            workspace_name (str): The name of the workspace (default: hostname).
-            workspace_path (str): The path to the workspace, ideally where the code is COPY-ed in Dockerfile (default: "/app").
-
-
-        """
+        original_deployment_raw = self._get_deployment_definition(
+            self.original_deployment_name, self.namespace
+        )
         deployment_raw = self._modify_deployment_for_dev_mode(
-            self._get_deployment_definition(
-                self.original_deployment_name, self.namespace
-            ),
-            self.workspace_path,
+            original_deployment_raw, self.workspace_path
         )
 
         logger.debug("Dumping deployment definition to YAML")
@@ -95,6 +111,7 @@ class Workspace:
             pvc_result = Config.V1_API.create_namespaced_persistent_volume_claim(
                 namespace=self.namespace, body=pvc
             )
+            self.pvc_name = pvc_result.metadata.name
             logger.info(f"Created PVC {pvc.metadata.name}")
         except client.exceptions.ApiException as e:
             if e.status == 409:
@@ -115,6 +132,7 @@ class Workspace:
                 body=deployment_raw, namespace=self.namespace
             )
             logger.debug("Deployment created successfully")
+            self.deployment_name = deployment_result.metadata.name
             logger.info(
                 f"Successfully created deployment {self.deployment_name} in namespace {self.namespace}"
             )
@@ -142,18 +160,36 @@ class Workspace:
                     logger.error(f"Failed to cleanup PVC {self.pvc_name}: {e}")
                 # sys.exit(1)
 
+        # Find realted service and ingress
+        # try:
+        #     service_list = Config.V1_API.list_namespaced_service(
+        #         namespace=self.namespace, label_selector=f"app.kubernetes.io/instance={self.original_deployment_raw.metadata.labels['app.kubernetes.io/instance']}"
+        #     )
+        #     if service_list.items:
+        #         service = service_list.items[0]
+        #         self.service_name = f"{service.metadata.name}-{self.prefix}"
+
+        #     else:
+        #         logger.warning(f"No service found with label app.kubernetes.io/instance={self.original_deployment_name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to: {e}")
+        # except client.exceptions.ApiException as e:
+        #     logger.warning(f"Service {self.original_deployment_name} not found: {e}")
+
         # Create secret to store deployment and PVC UIDs
         secret_name = self.secret_name
         secret = client.V1Secret(
             metadata=client.V1ObjectMeta(
-                name=secret_name, namespace=self.namespace, labels={"tool": "devmode"}
+                name=secret_name, namespace=self.namespace, labels=self.labels
             ),
             string_data={
                 "workspace_name": self.workspace_name,
-                "deployment_name": deployment_result.metadata.name,
+                "deployment_name": self.deployment_name,
                 "original_deployment_name": self.original_deployment_name,
-                "pvc_name": pvc_result.metadata.name,
+                "pvc_name": self.pvc_name,
                 "workspace_path": self.workspace_path,
+                "service_name": self.service_name,
             },
         )
 
@@ -162,6 +198,7 @@ class Workspace:
             secret_result = Config.V1_API.create_namespaced_secret(
                 namespace=self.namespace, body=secret
             )
+            self.secret_name = secret_result.metadata.name
             logger.info(f"Created secret {secret_name}")
         except client.exceptions.ApiException as e:
             if e.status == 409:
@@ -174,9 +211,9 @@ class Workspace:
 
         return (
             self.workspace_name,
-            deployment_result.metadata.name,
-            pvc_result.metadata.name,
-            secret_result.metadata.name,
+            self.deployment_name,
+            self.pvc_name,
+            self.secret_name,
         )
 
     def delete(self):
@@ -190,9 +227,6 @@ class Workspace:
             f"Deleting workspace {self.workspace_name} in namespace {self.namespace}"
         )
 
-        # deployment_name, original_deployment_name, pvc_name, workspace_path, secret_name = (
-        #     self._get_workspace_from_secret(self.workspace_name, self.namespace)
-        # )
         try:
 
             if self.deployment_name:
@@ -264,6 +298,7 @@ class Workspace:
                 original_deployment_name,
                 pvc_name,
                 workspace_path,
+                service_name,
                 secret_name,
             ) = self._get_workspace_from_secret(self.workspace_name, self.namespace)
             logger.debug(
@@ -306,12 +341,9 @@ class Workspace:
         logger.debug("Setting replicas to 1")
         deployment.spec.replicas = 1
 
-        deployment.metadata.labels = {}
-        # deployment.metadata.labels = {"tool": "devmode"} # TODO / Get from config
-        deployment.metadata.labels["app"] = self.deployment_name
-        deployment.metadata.labels["tool"] = "devmode"
-        deployment.spec.template.metadata.labels = {"app": self.deployment_name}
-        deployment.spec.selector.match_labels = {"app": self.deployment_name}
+        deployment.metadata.labels = self.labels
+        deployment.spec.template.metadata.labels = self.labels
+        deployment.spec.selector.match_labels = self.labels
 
         logger.debug("Removing resourceVersion and other service fields")
         deployment.metadata.resource_version = None
