@@ -25,12 +25,11 @@ echo "export PATH=$PATH:~/scripts" >> ~/.zshrc
 ```
 
 ## Usage
-
-`aws eks update-kubeconfig --alias "mc-elevate-dev-eu-west-2" --name main --profile "mc-elevate-dev" --region "eu-west-2" --kubeconfig ~/.kube/"mc-elevate-dev-eu-west-2"` Configure EKS dev kubeconfig.
-`aws sso login --profile mc-elevate-prod` - Authenticate to AWS (EKS).
-
 DevMode tool requires an existing deployemnt to be cloned.  
 `devmode --help`
+
+- Authenticate to AWS
+- Make sure you are using the correct KUBECONFIG and context
 
 Start the workspace:  
 `devmode start --deployment_name <deployment>  --namespace <namespace> --workspace_name name-surname`
