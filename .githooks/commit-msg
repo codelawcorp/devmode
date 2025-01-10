@@ -7,5 +7,3 @@ CONFIG_PATH="$(git rev-parse --show-toplevel)/.githooks/.commitlintrc.yml"
 npm list -g @commitlint/config-conventional || npm install -g @commitlint/config-conventional commitlint
 npx commitlint --config "$CONFIG_PATH" --edit "$1"
 
-# kubectl context must be configured and aws logged in
-pytest
