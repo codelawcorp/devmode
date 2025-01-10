@@ -25,6 +25,7 @@ echo "export PATH=$PATH:~/scripts" >> ~/.zshrc
 ```
 
 ## Usage
+
 DevMode tool requires an existing deployemnt to be cloned.  
 `devmode --help`
 
@@ -32,11 +33,9 @@ DevMode tool requires an existing deployemnt to be cloned.
 - Make sure you are using the correct KUBECONFIG and context
 
 Start the workspace:  
-`devmode start --deployment_name <deployment>  --namespace <namespace> --workspace_name name-surname`
+`devmode start --deployment_name <deployment>  --namespace <namespace> --workspace_name <your nickname>`
 
-Note: Git credentials are handled automatically by VSCode's built-in credential management. You do not need to manually configure credentials inside the container:  
-For the first time, clone any repo from your private VCS with API token (not SSH) - that will store your credentials in `credentials-helper` store.
-Git crentials are propagated automatically by VScode magic. (It sets `GIT_ASKPASS` environment variable).
+Good news! VSCode propagates your local git credentials into pod automatically. When you push/pull your code, it will not ask for password. For this to work, credentials must be stored locally via `credentials-helper` store. (Inside pod vscode sets `GIT_ASKPASS` environment variable with a magic script).
 
 ### Connect VSCode
 
