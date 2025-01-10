@@ -100,7 +100,7 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
 
     logger.debug("Updating deployment name")
     deployment.metadata.name += f"-{WORKSPACE_NAME}-devmode"
-    # deployment.spec.template.metadata.labels["app"] = deployment.metadata.name
+    deployment.spec.template.metadata.labels["app"] = deployment.metadata.name
 
     logger.debug("Setting replicas to 1")
     deployment.spec.replicas = 1
@@ -111,7 +111,10 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
     deployment.metadata.creation_timestamp = None
     deployment.metadata.generation = None
     deployment.metadata.annotations = None
-    deployment.metadata.labels = None
+    # deployment.metadata.labels = {"tool": "devmode"} # TODO / Get from config
+    deployment.metadata.labels = {}
+    deployment.metadata.labels["app"] = deployment.metadata.name
+    deployment.metadata.labels["tool"] = "devmode"
     deployment.metadata.owner_references = None
     deployment.metadata.managed_fields = None
 
