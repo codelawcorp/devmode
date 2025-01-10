@@ -120,17 +120,17 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
         logger.debug(f"Changing `{container.name}` container's args")
         container.args = ["""
                 if command -v apt-get &> /dev/null; then
-                    apt-get update && apt-get install -y git
+                    apt-get update && apt-get install -y git make
                 elif command -v yum &> /dev/null; then
-                    yum install -y git
+                    yum install -y git make
                 elif command -v dnf &> /dev/null; then
-                    dnf install -y git
+                    dnf install -y git make
                 elif command -v zypper &> /dev/null; then
-                    zypper install -y git
+                    zypper install -y git make
                 elif command -v pacman &> /dev/null; then
-                    pacman -Sy git
+                    pacman -Sy git make
                 elif command -v apk &> /dev/null; then
-                    apk add git
+                    apk add git make
                 else
                     echo "Unsupported package manager. Please install git manually."
                 fi
