@@ -9,6 +9,8 @@ import sys
 import socket
 import base64
 
+
+
 logger.debug("Setting up logging and attempting to load kubeconfig")
 try:
     kubeconfig = os.getenv("KUBECONFIG", "~/.kube/config")
@@ -109,7 +111,7 @@ def modify_deployment_for_dev_mode(deployment, workspace_path):
     deployment.metadata.creation_timestamp = None
     deployment.metadata.generation = None
     deployment.metadata.annotations = None
-    deployment.metadata.annotations = None
+    deployment.metadata.labels = None
     deployment.metadata.owner_references = None
     deployment.metadata.managed_fields = None
 
