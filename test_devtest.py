@@ -34,17 +34,19 @@ def temp_namespace():
     ],
 )
 def sample_deployment(temp_namespace, request):
+    labels = {"app.kubernetes.io/instance": request.param}
     # Create a deployment
     apps_api = client.AppsV1Api()
+    core_api = client.CoreV1Api()
     deployment = client.V1Deployment(
         metadata=client.V1ObjectMeta(
-            name=request.param, namespace=temp_namespace, labels={"app": request.param}
+            name=request.param, namespace=temp_namespace, labels=labels
         ),
         spec=client.V1DeploymentSpec(
             replicas=1,
-            selector=client.V1LabelSelector(match_labels={"app": request.param}),
+            selector=client.V1LabelSelector(match_labels=labels),
             template=client.V1PodTemplateSpec(
-                metadata=client.V1ObjectMeta(labels={"app": request.param}),
+                metadata=client.V1ObjectMeta(labels=labels),
                 spec=client.V1PodSpec(
                     containers=[
                         client.V1Container(
@@ -62,7 +64,20 @@ def sample_deployment(temp_namespace, request):
         ),
     )
     # Create deployment in cluster
+
+    service = client.V1Service(
+        metadata=client.V1ObjectMeta(
+            name=request.param, namespace=temp_namespace, labels=labels
+        ),
+        spec=client.V1ServiceSpec(
+            selector=labels,
+            ports=[client.V1ServicePort(port=80, target_port=80)],
+            type="ClusterIP",
+        ),
+    )
+
     apps_api.create_namespaced_deployment(namespace=temp_namespace, body=deployment)
+    core_api.create_namespaced_service(namespace=temp_namespace, body=service)
 
     yield deployment.metadata.name, temp_namespace
 
@@ -93,10 +108,13 @@ class TestDevmode:
             deployment,
             workspace_path="/code",
         )
-        workspace_name, deployment_name, pvc_name, secret_name = workspace.start()
-        assert deployment in deployment_name
-        assert deployment in secret_name
-        assert deployment in pvc_name
+        workspace_name, deployment_name, pvc_name, service_name, secret_name = (
+            workspace.start()
+        )
+        assert deployment in deployment_name and deployment != deployment_name
+        assert deployment in service_name and deployment != service_name
+        assert deployment in secret_name and deployment != secret_name
+        assert deployment in pvc_name and deployment != pvc_name
         assert workspace_name == "test-workspace"
 
         # Assert that the deployment has all pods running

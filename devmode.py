@@ -161,22 +161,45 @@ class Workspace:
                 # sys.exit(1)
 
         # Find realted service and ingress
-        # try:
-        #     service_list = Config.V1_API.list_namespaced_service(
-        #         namespace=self.namespace, label_selector=f"app.kubernetes.io/instance={self.original_deployment_raw.metadata.labels['app.kubernetes.io/instance']}"
-        #     )
-        #     if service_list.items:
-        #         service = service_list.items[0]
-        #         self.service_name = f"{service.metadata.name}-{self.prefix}"
+        try:
+            service_list = Config.V1_API.list_namespaced_service(
+                namespace=self.namespace,
+                label_selector=f"app.kubernetes.io/instance={original_deployment_raw.metadata.labels['app.kubernetes.io/instance']}",
+            )
+            if service_list.items:
+                original_service = service_list.items[0]
+                self.service_name = f"{original_service.metadata.name}-{self.prefix}"
 
-        #     else:
-        #         logger.warning(f"No service found with label app.kubernetes.io/instance={self.original_deployment_name}")
+                # Create a copy of the service with new labels and name
+                new_service = original_service
+                new_service.metadata.name = self.service_name
+                new_service.metadata.labels = self.labels
+                new_service.spec.selector = self.labels
+                new_service.spec.clusterIPs = None
+
+                try:
+                    logger.debug(f"Creating service {self.service_name}")
+                    Config.V1_API.create_namespaced_service(
+                        namespace=self.namespace, body=new_service
+                    )
+                    logger.info(f"Created service {self.service_name}")
+                except client.exceptions.ApiException as e:
+                    if e.status == 409:
+                        logger.warning(f"Service {self.service_name} already exists")
+                    else:
+                        logger.error(f"Failed to create service: {e}")
+                        raise
+            else:
+                logger.warning(
+                    f"No service found with label app.kubernetes.io/instance={self.original_deployment_name}"
+                )
 
         except Exception as e:
-            logger.warning(f"Failed to: {e}")
+            logger.warning(f"Failed to create service: {e}")
         # except client.exceptions.ApiException as e:
         #     logger.warning(f"Service {self.original_deployment_name} not found: {e}")
 
+        # TODO / make a function of this
         # Create secret to store deployment and PVC UIDs
         secret_name = self.secret_name
         secret = client.V1Secret(
@@ -213,6 +236,7 @@ class Workspace:
             self.workspace_name,
             self.deployment_name,
             self.pvc_name,
+            self.service_name,
             self.secret_name,
         )
 
@@ -262,6 +286,20 @@ class Workspace:
                         raise
 
             logger.debug(f"Attempting to delete secret {self.secret_name}")
+
+            if self.service_name:
+                logger.debug(f"Attempting to delete service {self.service_name}")
+                try:
+                    Config.V1_API.delete_namespaced_service(
+                        name=self.service_name, namespace=self.namespace
+                    )
+                    logger.info(f"Deleted service {self.service_name}")
+                except client.exceptions.ApiException as e:
+                    if e.status == 404:
+                        logger.warning(f"Service {self.service_name} already deleted")
+                    else:
+                        logger.error(f"Failed to delete service: {e}")
+                        raise
             # Delete the secret itself
             try:
                 Config.V1_API.delete_namespaced_secret(
@@ -633,6 +671,13 @@ class Workspace:
                             if secret.data.get("workspace_path")
                             else None
                         )
+                        service_name = (
+                            base64.b64decode(secret.data["service_name"]).decode(
+                                "utf-8"
+                            )
+                            if secret.data.get("service_name")
+                            else None
+                        )
                         logger.debug(
                             f"Deployment name: {original_deployment_name}, PVC name: {pvc_name}, workspace path: {workspace_path}"
                         )
@@ -642,6 +687,7 @@ class Workspace:
                             original_deployment_name,
                             pvc_name,
                             workspace_path,
+                            service_name,
                             secret.metadata.name,
                         )
 
@@ -665,6 +711,7 @@ class Workspace:
             original_deployment_name,
             pvc_name,
             workspace_path,
+            service_name,
             secret_name,
         ) = Workspace._get_workspace_from_secret(workspace_name, namespace)
 
