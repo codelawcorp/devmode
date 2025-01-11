@@ -60,6 +60,18 @@
       "env": {
         // "PYTHONPATH": "${workspaceFolder}"
       }
+    },
+    {
+      "name": "Python: Debug pytest",
+      "type": "python",
+      "request": "launch", // or attach
+      "module": "pytest", // insteald of "program"
+      "args": ["--rootdir=", "${workspaceFolder}/devmode"],
+      // "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        // "PYTHONPATH": "${workspaceFolder}"
+      }
     }
   ]
 }
