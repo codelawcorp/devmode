@@ -29,18 +29,26 @@ def temp_namespace():
 @pytest.fixture(
     scope="class",
     params=[
-        "sample-deployment",
+        {
+            "workspace_name": "sample-workspace",
+            "deployment_name": "sample-deployment",
+            "service_name": "sample-service",
+            "workspace_path": "/code",
+        },  # TODO / worksapce_path should not be here
+        # {"workspace_name": "invalide_name", "deployment_name": "invalid_name", "service_name": "invalid_name", "workspace_path": "invalid_path"}, # TODO / make this passing
         # "sample-deployment-2"
     ],
 )
-def sample_deployment(temp_namespace, request):
-    labels = {"app.kubernetes.io/instance": request.param}
+def sample_workspace(temp_namespace, request):
+    labels = {"app.kubernetes.io/instance": request.param["deployment_name"]}
     # Create a deployment
     apps_api = client.AppsV1Api()
     core_api = client.CoreV1Api()
     deployment = client.V1Deployment(
         metadata=client.V1ObjectMeta(
-            name=request.param, namespace=temp_namespace, labels=labels
+            name=request.param["deployment_name"],
+            namespace=temp_namespace,
+            labels=labels,
         ),
         spec=client.V1DeploymentSpec(
             replicas=1,
@@ -67,11 +75,13 @@ def sample_deployment(temp_namespace, request):
 
     service = client.V1Service(
         metadata=client.V1ObjectMeta(
-            name=request.param, namespace=temp_namespace, labels=labels
+            name=request.param["service_name"], namespace=temp_namespace, labels=labels
         ),
         spec=client.V1ServiceSpec(
             selector=labels,
-            ports=[client.V1ServicePort(port=80, target_port=80)],
+            ports=[
+                client.V1ServicePort(port=80, target_port=80)
+            ],  # Does not matteer for now
             type="ClusterIP",
         ),
     )
@@ -79,7 +89,9 @@ def sample_deployment(temp_namespace, request):
     apps_api.create_namespaced_deployment(namespace=temp_namespace, body=deployment)
     core_api.create_namespaced_service(namespace=temp_namespace, body=service)
 
-    yield deployment.metadata.name, temp_namespace
+    yield request.param["workspace_name"], request.param[
+        "deployment_name"
+    ], request.param["service_name"], request.param["workspace_path"], temp_namespace
 
     # Cleanup
     try:
@@ -96,26 +108,43 @@ def sample_deployment(temp_namespace, request):
 #     assert True, "is obvious"
 
 
-class TestDevmode:
-    workspace_name = "test-workspace"
+class TestWorkspace:
 
-    def test_start(self, sample_deployment):
+    def test_start(self, sample_workspace):
         """Test starting a workspace"""
-        deployment, temp_namespace = sample_deployment
-        workspace = devmode.Workspace(
-            "test-workspace",
+        (
+            workspace_name,
+            deployment_name,
+            service_name,
+            workspace_path,
             temp_namespace,
-            deployment,
-            workspace_path="/code",
+        ) = sample_workspace
+        workspace = devmode.Workspace(
+            workspace_name,
+            temp_namespace,
+            deployment_name,
+            workspace_path,
         )
-        workspace_name, deployment_name, pvc_name, service_name, secret_name = (
-            workspace.start()
+        (
+            new_workspace_name,
+            new_deployment_name,
+            new_pvc_name,
+            new_service_name,
+            new_secret_name,
+        ) = workspace.start()
+        assert (
+            deployment_name in new_deployment_name
+            and deployment_name != new_deployment_name
         )
-        assert deployment in deployment_name and deployment != deployment_name
-        assert deployment in service_name and deployment != service_name
-        assert deployment in secret_name and deployment != secret_name
-        assert deployment in pvc_name and deployment != pvc_name
-        assert workspace_name == "test-workspace"
+        assert service_name in new_service_name and service_name != new_service_name
+
+        assert (
+            deployment_name in new_secret_name and deployment_name != new_secret_name
+        )  # named after deployment
+        assert (
+            deployment_name in new_pvc_name and deployment_name != new_pvc_name
+        )  # named after deployment
+        assert new_workspace_name == workspace_name
 
         # Assert that the deployment has all pods running
         from kubernetes import watch
@@ -126,7 +155,7 @@ class TestDevmode:
         for event in w.stream(
             V1_API.list_namespaced_pod,
             namespace=temp_namespace,
-            label_selector=f"app={deployment}",
+            label_selector=f"app.kubernetes.io/instance={deployment_name}",
             timeout_seconds=40,
         ):
             pod = event["object"]
@@ -134,35 +163,52 @@ class TestDevmode:
                 break
         else:
             for pod in V1_API.list_namespaced_pod(
-                namespace=temp_namespace, label_selector=f"app={deployment}"
+                namespace=temp_namespace,
+                label_selector=f"app.kubernetes.io/instance={deployment_name}",
             ).items:
                 assert (
                     pod.status.phase == "Running"
                 ), f"Pod {pod.metadata.name} is not running"
 
-        # self.workspace_name = workspace_name
-
-    def test_list(self, sample_deployment, caplog):
+    def test_list(self, sample_workspace, caplog):
         """Test listing workspaces"""
-        deployment, temp_namespace = sample_deployment
+        (
+            workspace_name,
+            deployment_name,
+            service_name,
+            workspace_path,
+            temp_namespace,
+        ) = sample_workspace
         # Verify the workspace shows up in list
         result = devmode.Workspace.list_workspaces(temp_namespace)
 
         assert len(result) == 1  # created by the test_start
-        assert self.workspace_name in result[0]["Workspace Name"]
+        assert workspace_name in result[0]["Workspace Name"]
         assert "Workspace Name" in caplog.text
 
-    def test_recreate(self, sample_deployment):
+    def test_recreate(self, sample_workspace):
         """Test recreating a workspace"""
-        deployment, temp_namespace = sample_deployment
+        (
+            workspace_name,
+            deployment_name,
+            service_name,
+            workspace_path,
+            temp_namespace,
+        ) = sample_workspace
         devmode.Workspace._reconstruct_existing_workspace(
-            self.workspace_name, temp_namespace
+            workspace_name, temp_namespace
         ).recreate()
 
-    def test_delete(self, sample_deployment):
+    def test_delete(self, sample_workspace):
         """Test deleting a workspace"""
-        deployment, temp_namespace = sample_deployment
+        (
+            workspace_name,
+            deployment_name,
+            service_name,
+            workspace_path,
+            temp_namespace,
+        ) = sample_workspace
         devmode.Workspace._reconstruct_existing_workspace(
-            self.workspace_name, temp_namespace
+            workspace_name, temp_namespace
         ).delete()
         # Verify workspace no longer exists
