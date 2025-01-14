@@ -33,6 +33,7 @@ def temp_namespace():
             "workspace_name": "sample-workspace",
             "deployment_name": "sample-deployment",
             "service_name": "sample-service",
+            "ingress_name": "sample-ingress",
             "workspace_path": "/code",
         },  # TODO / worksapce_path should not be here
         # {"workspace_name": "invalide_name", "deployment_name": "invalid_name", "service_name": "invalid_name", "workspace_path": "invalid_path"}, # TODO / make this passing
@@ -44,6 +45,7 @@ def sample_workspace(temp_namespace, request):
     # Create a deployment
     apps_api = client.AppsV1Api()
     core_api = client.CoreV1Api()
+    network = client.NetworkingV1Api()
     deployment = client.V1Deployment(
         metadata=client.V1ObjectMeta(
             name=request.param["deployment_name"],
@@ -85,13 +87,45 @@ def sample_workspace(temp_namespace, request):
             type="ClusterIP",
         ),
     )
+    ingress = client.V1Ingress(
+        metadata=client.V1ObjectMeta(
+            name=request.param["ingress_name"], namespace=temp_namespace, labels=labels
+        ),
+        spec=client.V1IngressSpec(
+            rules=[
+                client.V1IngressRule(
+                    host="example.com",
+                    http=client.V1HTTPIngressRuleValue(
+                        paths=[
+                            client.V1HTTPIngressPath(
+                                path="/",
+                                path_type="Prefix",
+                                backend=client.V1IngressBackend(
+                                    service=client.V1IngressServiceBackend(
+                                        name=request.param["service_name"],
+                                        port={"port": "http", "number": 80},
+                                    )
+                                ),
+                            )
+                        ]
+                    ),
+                )
+            ]
+        ),
+    )
 
     apps_api.create_namespaced_deployment(namespace=temp_namespace, body=deployment)
     core_api.create_namespaced_service(namespace=temp_namespace, body=service)
+    network.create_namespaced_ingress(namespace=temp_namespace, body=ingress)
 
-    yield request.param["workspace_name"], request.param[
-        "deployment_name"
-    ], request.param["service_name"], request.param["workspace_path"], temp_namespace
+    yield (
+        request.param["workspace_name"],
+        temp_namespace,
+        request.param["deployment_name"],
+        request.param["service_name"],
+        request.param["ingress_name"],
+        request.param["workspace_path"],
+    )
 
     # Cleanup
     try:
@@ -114,10 +148,11 @@ class TestWorkspace:
         """Test starting a workspace"""
         (
             workspace_name,
+            temp_namespace,
             deployment_name,
             service_name,
+            ingress_name,
             workspace_path,
-            temp_namespace,
         ) = sample_workspace
         workspace = devmode.Workspace(
             workspace_name,
@@ -130,6 +165,7 @@ class TestWorkspace:
             new_deployment_name,
             new_pvc_name,
             new_service_name,
+            new_ingress_name,
             new_secret_name,
         ) = workspace.start()
         assert (
@@ -137,6 +173,7 @@ class TestWorkspace:
             and deployment_name != new_deployment_name
         )
         assert service_name in new_service_name and service_name != new_service_name
+        assert ingress_name in new_ingress_name and ingress_name != new_ingress_name
 
         assert (
             deployment_name in new_secret_name and deployment_name != new_secret_name
@@ -174,10 +211,11 @@ class TestWorkspace:
         """Test listing workspaces"""
         (
             workspace_name,
-            deployment_name,
-            service_name,
-            workspace_path,
             temp_namespace,
+            deployment_name,
+            workspace_path,
+            service_name,
+            ingress_name,
         ) = sample_workspace
         # Verify the workspace shows up in list
         result = devmode.Workspace.list_workspaces(temp_namespace)
@@ -190,10 +228,11 @@ class TestWorkspace:
         """Test recreating a workspace"""
         (
             workspace_name,
-            deployment_name,
-            service_name,
-            workspace_path,
             temp_namespace,
+            deployment_name,
+            workspace_path,
+            service_name,
+            ingress_name,
         ) = sample_workspace
         devmode.Workspace._reconstruct_existing_workspace(
             workspace_name, temp_namespace
@@ -203,10 +242,11 @@ class TestWorkspace:
         """Test deleting a workspace"""
         (
             workspace_name,
-            deployment_name,
-            service_name,
-            workspace_path,
             temp_namespace,
+            deployment_name,
+            workspace_path,
+            service_name,
+            ingress_name,
         ) = sample_workspace
         devmode.Workspace._reconstruct_existing_workspace(
             workspace_name, temp_namespace

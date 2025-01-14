@@ -11,6 +11,7 @@ import base64
 class Config:
     V1_API = None
     APPS_API = None
+    NETWORKING_API = None
 
     # @staticmethod
     def setup_kubernetes_client():
@@ -20,7 +21,8 @@ class Config:
             logger.debug(f"Using kubeconfig path: {kubeconfig}")
             config.load_kube_config(config_file=kubeconfig)
 
-            logger.debug("Creating API clients")
+            Config.V1_API = client.CoreV1Api()
+            Config.NETWORKING_API = client.NetworkingV1Api()
             Config.V1_API = client.CoreV1Api()
             Config.APPS_API = client.AppsV1Api()
 
@@ -160,7 +162,6 @@ class Workspace:
                     logger.error(f"Failed to cleanup PVC {self.pvc_name}: {e}")
                 # sys.exit(1)
 
-        # Find realted service and ingress
         service_list = Config.V1_API.list_namespaced_service(
             namespace=self.namespace,
             label_selector=f"app.kubernetes.io/instance={original_deployment_raw.metadata.labels['app.kubernetes.io/instance']}",
@@ -195,6 +196,37 @@ class Workspace:
                 f"No service found with label app.kubernetes.io/instance={self.original_deployment_name}"
             )
 
+        # Get ingresses in the namespace
+        ingress_list = Config.NETWORKING_API.list_namespaced_ingress(
+            namespace=self.namespace,
+            label_selector=f"app.kubernetes.io/instance={original_deployment_raw.metadata.labels['app.kubernetes.io/instance']}",
+        )
+        if ingress_list.items:
+            original_ingress = ingress_list.items[0]
+            self.ingress_name = f"{original_ingress.metadata.name}-{self.prefix}"
+
+            # Create a copy of the ingress with new labels and name
+            new_ingress = original_ingress
+            new_ingress.metadata.name = self.ingress_name
+            new_ingress.metadata.labels = self.labels
+            new_ingress.metadata.resource_version = None
+            new_ingress.spec.rules[0].host = (
+                f"{self.prefix}.{original_ingress.spec.rules[0].host}"
+            )
+
+            try:
+                logger.debug(f"Creating ingress {self.ingress_name}")
+                Config.NETWORKING_API.create_namespaced_ingress(
+                    namespace=self.namespace, body=new_ingress
+                )
+                logger.info(f"Created ingress {self.ingress_name}")
+            except client.exceptions.ApiException as e:
+                if e.status == 409:
+                    logger.warning(f"Ingress {self.ingress_name} already exists")
+                else:
+                    logger.error(f"Failed to create ingress: {e}")
+                    raise
+
         # except client.exceptions.ApiException as e:
         #     logger.warning(f"Service {self.original_deployment_name} not found: {e}")
 
@@ -212,6 +244,7 @@ class Workspace:
                 "pvc_name": self.pvc_name,
                 "workspace_path": self.workspace_path,
                 "service_name": self.service_name,
+                "ingress_name": self.ingress_name,
             },
         )
 
@@ -236,6 +269,7 @@ class Workspace:
             self.deployment_name,
             self.pvc_name,
             self.service_name,
+            self.ingress_name,
             self.secret_name,
         )
 
@@ -336,6 +370,7 @@ class Workspace:
                 pvc_name,
                 workspace_path,
                 service_name,
+                ingress_name,
                 secret_name,
             ) = self._get_workspace_from_secret(self.workspace_name, self.namespace)
             logger.debug(
@@ -358,7 +393,7 @@ class Workspace:
 
         logger.info(f"Successfully recreated workspace {self.workspace_name}")
 
-    def _modify_deployment_for_dev_mode(self, deployment, workspace_path):
+    def _modify_deployment_for_dev_mode(self, old_deployment, workspace_path):
         """
         Modifies the deployment definition for development mode:
         - Sets replicas to 1
@@ -373,30 +408,31 @@ class Workspace:
             V1Deployment: Modified deployment definition.
         """
         logger.debug("Starting deployment modification for dev mode")
+        new_deployment = old_deployment
 
         logger.debug(f"Updating deployment name with {self.deployment_name}")
-        deployment.metadata.name = self.deployment_name
+        new_deployment.metadata.name = self.deployment_name
 
         logger.debug("Setting replicas to 1")
-        deployment.spec.replicas = 1
+        new_deployment.spec.replicas = 1
 
-        deployment.metadata.labels = self.labels
-        deployment.spec.template.metadata.labels = self.labels
-        deployment.spec.selector.match_labels = self.labels
+        new_deployment.metadata.labels = self.labels
+        new_deployment.spec.template.metadata.labels = self.labels
+        new_deployment.spec.selector.match_labels = self.labels
 
         logger.debug("Removing resourceVersion and other service fields")
-        deployment.metadata.resource_version = None
-        deployment.metadata.uid = None
-        deployment.metadata.creation_timestamp = None
-        deployment.metadata.generation = None
-        deployment.metadata.annotations = None
-        deployment.metadata.owner_references = None
-        deployment.metadata.managed_fields = None
+        new_deployment.metadata.resource_version = None
+        new_deployment.metadata.uid = None
+        new_deployment.metadata.creation_timestamp = None
+        new_deployment.metadata.generation = None
+        new_deployment.metadata.annotations = None
+        new_deployment.metadata.owner_references = None
+        new_deployment.metadata.managed_fields = None
 
         # TODO / remove podAntiAffinity
 
         logger.debug("Modifying containers")
-        for container in deployment.spec.template.spec.containers:
+        for container in new_deployment.spec.template.spec.containers:
             logger.debug(f"Changing `{container.name}` container's command")
             container.command = ["/bin/sh", "-c"]
             logger.debug(f"Changing `{container.name}` container's args")
@@ -495,21 +531,21 @@ class Workspace:
                         port.container_port = 8080
 
         logger.debug("Clearing pod security context")
-        deployment.spec.template.spec.security_context = None
+        new_deployment.spec.template.spec.security_context = None
 
         logger.debug("Processing volumes and mounts")
-        if deployment.spec.template.spec.volumes:
+        if new_deployment.spec.template.spec.volumes:
             volumes_to_keep = []
-            for vol in deployment.spec.template.spec.volumes:
+            for vol in new_deployment.spec.template.spec.volumes:
                 if not (
                     vol.name.startswith("kube-api-access")
                     or vol.name == "eks-pod-identity-token"
                 ):
                     volumes_to_keep.append(vol)
-            deployment.spec.template.spec.volumes = volumes_to_keep
+            new_deployment.spec.template.spec.volumes = volumes_to_keep
 
             logger.debug("Removing corresponding volume mounts")
-            for container in deployment.spec.template.spec.containers:
+            for container in new_deployment.spec.template.spec.containers:
                 if container.volume_mounts:
                     container.volume_mounts = [
                         mount
@@ -522,14 +558,14 @@ class Workspace:
         logger.debug("Adding PVC volume and mount")
 
         # Add a volume and volumeMount for PVC
-        if deployment.spec.template.spec.volumes is None:
-            deployment.spec.template.spec.volumes = []
+        if new_deployment.spec.template.spec.volumes is None:
+            new_deployment.spec.template.spec.volumes = []
         # Avoid duplicate volumes if re-creating workspace
         if not any(
             volume.name == "workspace"
-            for volume in deployment.spec.template.spec.volumes
+            for volume in new_deployment.spec.template.spec.volumes
         ):
-            deployment.spec.template.spec.volumes.append(
+            new_deployment.spec.template.spec.volumes.append(
                 client.V1Volume(
                     name="workspace",
                     persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
@@ -539,7 +575,7 @@ class Workspace:
             )
 
         # Add volume mount to all containers
-        for container in deployment.spec.template.spec.containers:
+        for container in new_deployment.spec.template.spec.containers:
             if container.volume_mounts is None:
                 container.volume_mounts = []
             if not any(
@@ -549,7 +585,7 @@ class Workspace:
                     client.V1VolumeMount(name="workspace", mount_path=workspace_path)
                 )
 
-        return deployment
+        return new_deployment
 
     @staticmethod
     def list_workspaces(namespace=None):
@@ -679,6 +715,13 @@ class Workspace:
                             if secret.data.get("service_name")
                             else None
                         )
+                        ingress_name = (
+                            base64.b64decode(secret.data["ingress_name"]).decode(
+                                "utf-8"
+                            )
+                            if secret.data.get("ingress_name")
+                            else None
+                        )
                         logger.debug(
                             f"Deployment name: {original_deployment_name}, PVC name: {pvc_name}, workspace path: {workspace_path}"
                         )
@@ -689,6 +732,7 @@ class Workspace:
                             pvc_name,
                             workspace_path,
                             service_name,
+                            ingress_name,
                             secret.metadata.name,
                         )
 
@@ -713,6 +757,7 @@ class Workspace:
             pvc_name,
             workspace_path,
             service_name,
+            ingress_name,
             secret_name,
         ) = Workspace._get_workspace_from_secret(workspace_name, namespace)
 
