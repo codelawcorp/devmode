@@ -701,7 +701,7 @@ class Workspace:
             # sys.exit(1)
 
     @staticmethod
-    def _existing_workspace(workspace_name, namespace):
+    def _reconstruct_existing_workspace(workspace_name, namespace):
         Config.setup_kubernetes_client()
 
         Workspace.workspace_name = workspace_name
@@ -746,10 +746,10 @@ if __name__ == "__main__":
                 workspace_name, namespace, deployment_name, workspace_path
             ).start(),
             "list": Workspace.list_workspaces,
-            "delete": lambda workspace_name, namespace: Workspace._existing_workspace(
+            "delete": lambda workspace_name, namespace: Workspace._reconstruct_existing_workspace(
                 workspace_name, namespace
             ).delete(),
-            "recreate": lambda workspace_name, namespace, workspace_path=None: Workspace._existing_workspace(
+            "recreate": lambda workspace_name, namespace, workspace_path=None: Workspace._reconstruct_existing_workspace(
                 workspace_name, namespace
             ).recreate(
                 workspace_path

@@ -155,14 +155,14 @@ class TestDevmode:
     def test_recreate(self, sample_deployment):
         """Test recreating a workspace"""
         deployment, temp_namespace = sample_deployment
-        devmode.Workspace._existing_workspace(
+        devmode.Workspace._reconstruct_existing_workspace(
             self.workspace_name, temp_namespace
         ).recreate()
 
     def test_delete(self, sample_deployment):
         """Test deleting a workspace"""
         deployment, temp_namespace = sample_deployment
-        devmode.Workspace._existing_workspace(
+        devmode.Workspace._reconstruct_existing_workspace(
             self.workspace_name, temp_namespace
         ).delete()
         # Verify workspace no longer exists
