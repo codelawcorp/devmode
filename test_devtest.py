@@ -35,13 +35,33 @@ def temp_namespace():
             "service_name": "sample-service",
             "ingress_name": "sample-ingress",
             "workspace_path": "/code",
-        },  # TODO / worksapce_path should not be here
-        # {"workspace_name": "invalide_name", "deployment_name": "invalid_name", "service_name": "invalid_name", "workspace_path": "invalid_path"}, # TODO / make this passing
-        # "sample-deployment-2"
+            "labels": {
+                "app.kubernetes.io/instance": "sample-deployment",
+                "tags.datadoghq.com/env": "dev",
+                "tags.datadoghq.com/service": "sample-deployment",
+                "tags.datadoghq.com/version": "1.0.0",
+            },
+            "envVars": [
+                {"name": "SOME_KEY", "value": "SOME_VALUE"},
+            ],
+        },
+        {
+            "workspace_name": "sample-workspace-2",
+            "deployment_name": "sample-deployment-2",
+            "service_name": "sample-service-2",
+            "ingress_name": "sample-ingress-2",
+            "workspace_path": None,  # Try without workspace path
+            "labels": {
+                "app.kubernetes.io/instance": "sample-deployment-2",  #  MUST Match deployment name
+                "tags.datadoghq.com/env": "dev",
+                "tags.datadoghq.com/service": "sample-deployment-2",  #  MUST Match deployment name
+                "tags.datadoghq.com/version": "1.0.0",
+            },
+            "envVars": None,  # Try without env vars
+        },
     ],
 )
 def sample_workspace(temp_namespace, request):
-    labels = {"app.kubernetes.io/instance": request.param["deployment_name"]}
     # Create a deployment
     apps_api = client.AppsV1Api()
     core_api = client.CoreV1Api()
@@ -50,19 +70,20 @@ def sample_workspace(temp_namespace, request):
         metadata=client.V1ObjectMeta(
             name=request.param["deployment_name"],
             namespace=temp_namespace,
-            labels=labels,
+            labels=request.param["labels"],
         ),
         spec=client.V1DeploymentSpec(
             replicas=1,
-            selector=client.V1LabelSelector(match_labels=labels),
+            selector=client.V1LabelSelector(match_labels=request.param["labels"]),
             template=client.V1PodTemplateSpec(
-                metadata=client.V1ObjectMeta(labels=labels),
+                metadata=client.V1ObjectMeta(labels=request.param["labels"]),
                 spec=client.V1PodSpec(
                     containers=[
                         client.V1Container(
                             name="test-container",
                             image="nginx:latest",
                             ports=[client.V1ContainerPort(container_port=80)],
+                            env=request.param["envVars"],
                             resources=client.V1ResourceRequirements(
                                 requests={"cpu": "100m", "memory": "128Mi"},
                                 limits={"cpu": "200m", "memory": "256Mi"},
@@ -77,10 +98,12 @@ def sample_workspace(temp_namespace, request):
 
     service = client.V1Service(
         metadata=client.V1ObjectMeta(
-            name=request.param["service_name"], namespace=temp_namespace, labels=labels
+            name=request.param["service_name"],
+            namespace=temp_namespace,
+            labels=request.param["labels"],
         ),
         spec=client.V1ServiceSpec(
-            selector=labels,
+            selector=request.param["labels"],
             ports=[
                 client.V1ServicePort(port=80, target_port=80)
             ],  # Does not matteer for now
@@ -89,7 +112,9 @@ def sample_workspace(temp_namespace, request):
     )
     ingress = client.V1Ingress(
         metadata=client.V1ObjectMeta(
-            name=request.param["ingress_name"], namespace=temp_namespace, labels=labels
+            name=request.param["ingress_name"],
+            namespace=temp_namespace,
+            labels=request.param["labels"],
         ),
         spec=client.V1IngressSpec(
             rules=[

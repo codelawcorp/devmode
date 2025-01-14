@@ -71,11 +71,16 @@ class Workspace:
         self.service_name = None
         self.ingress_name = None
         self.workspace_path = workspace_path or "/app"
-
         self.labels = {
             "app.kubernetes.io/instance": self.original_deployment_name,
             "tool": "devmode",
             "workspace": self.workspace_name,
+            "tags.datadoghq.com/env": "dev",
+            "tags.datadoghq.com/service": self.deployment_name,
+            "tags.datadoghq.com/version": "latest",
+        }
+        self.annotations = {
+            "com.datadoghq.ad.tags": f'["workspace_name:{workspace_name}",]'
         }
 
         Config.setup_kubernetes_client()
@@ -425,7 +430,7 @@ class Workspace:
         new_deployment.metadata.uid = None
         new_deployment.metadata.creation_timestamp = None
         new_deployment.metadata.generation = None
-        new_deployment.metadata.annotations = None
+        new_deployment.metadata.annotations = self.annotations
         new_deployment.metadata.owner_references = None
         new_deployment.metadata.managed_fields = None
 
@@ -529,6 +534,16 @@ class Workspace:
                 for port in container.ports:
                     if not port.container_port:
                         port.container_port = 8080
+
+        if not container.env:
+            container.env = []
+        container.env.append(client.V1EnvVar(name="DEV_MODE", value="true"))
+        container.env.append(client.V1EnvVar(name="DEBUG", value="true"))
+        container.env.append(client.V1EnvVar(name="DD_ENV", value="dev"))
+        container.env.append(
+            client.V1EnvVar(name="DD_SERVICE", value=self.deployment_name)
+        )
+        container.env.append(client.V1EnvVar(name="DD_VERSION", value="latest"))
 
         logger.debug("Clearing pod security context")
         new_deployment.spec.template.spec.security_context = None

@@ -65,13 +65,11 @@ use `.vscode/launch.json`
 
 <!-- - Configure Jenkinsfile and Github Action  -->
 
-- Refactor, create `Workspace` class.
 - Show informative error when aws logged out.
-- Change selector to avoid interering with existing service. Find service, ingress and create clones with `-devmode` prefix.
+- Validate inputs
 - Enable creating a pod's clone. Now you can clone only Deployment.
 - Enable non gp2 StorageClass (or use default).
 - Enable Specifying a custom image.
-- "Don't elevate privileges" flag
 - **Super contribution** - launch th.e image built from Dockerfile.
 
 ### Testing
