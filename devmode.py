@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
-import os
+from math import log
+import os, sys
 
 import fire
 import yaml
@@ -39,38 +40,58 @@ class Config:
 
 
 class Workspace:
-    """
-    A class to manage Kubernetes workloads in development mode.
+    """TEST"""
 
-    Attributes:
-        workspace_name (str): The name of the workspace.
-        namespace (str): The namespace of the deployment.
-        original_deployment_name (str): The original name of the deployment.
-        workspace_path (str): The path to the workspace.
+    @property
+    def workspace_name(self):
+        return self._workspace_name
 
-    Methods:
-        start():
-            Creates a copy of the specified deployment with elevated permissions and a PVC.
-        delete():
-            Deletes a devmode workspace and associated resources.
-        recreate(new_workspace_path=None):
-        _modify_deployment_for_dev_mode(deployment, workspace_path):
-            Modifies the deployment definition for development mode.
-        list_workspaces(namespace=None):
-            Lists all devmode workspaces across all namespaces.
-    """
+    @workspace_name.setter
+    def workspace_name(self, value):
+        if not value:
+            raise ValueError("Workspace name value must not be empty")
+        self._workspace_name = value
+
+    @property
+    def namespace(self):
+        return self._namespace
+
+    @namespace.setter
+    def namespace(self, value):
+        if not value:
+            logger.warning("Namespace not provided, using default")
+            self._namespace = "default"
+        else:
+            self._namespace = value
+
+    @property
+    def original_deployment_name(self):
+        return self._original_deployment_name
+
+    @original_deployment_name.setter
+    def original_deployment_name(self, value):
+        self._original_deployment_name = value
+
+    @property
+    def workspace_path(self):
+        return self._workspace_path
+
+    @workspace_path.setter
+    def workspace_path(self, value):
+        self._workspace_path = value
 
     def __init__(self, workspace_name, namespace, deployment_name, workspace_path=None):
         self.workspace_name = workspace_name
-        self.prefix = f"devmode-{workspace_name}"
         self.namespace = namespace
         self.original_deployment_name = deployment_name
+        self.workspace_path = workspace_path or "/app"
+        self.service_name = None
+        self.ingress_name = None
+
+        self.prefix = f"devmode-{workspace_name}"
         self.deployment_name = f"{self.original_deployment_name}-{self.prefix}"
         self.pvc_name = f"{self.original_deployment_name}-{self.prefix}"
         self.secret_name = f"{self.original_deployment_name}-{self.prefix}"
-        self.service_name = None
-        self.ingress_name = None
-        self.workspace_path = workspace_path or "/app"
         self.labels = {
             "app.kubernetes.io/instance": self.original_deployment_name,
             "tool": "devmode",
@@ -85,12 +106,22 @@ class Workspace:
 
         Config.setup_kubernetes_client()
 
-    def start(self):
+    @staticmethod
+    def start_new(workspace_name, namespace, deployment_name, workspace_path=None):
         """Start a devmode workspace.
 
-        This command creates a new Kubernetes deployment with a Persistent Volume Claim (PVC)
-        attached and elevated privileges for development purposes.
+        Args:
+            workspace_name (str): Name of the workspace
+            namespace (str): Namespace to create the workspace in
+            deployment_name (str): Name of the deployment to create the workspace for
+            workspace_path (str): Path to the workspace in the container (default: /app)
         """
+        workspace = Workspace(
+            workspace_name, namespace, deployment_name, workspace_path
+        )
+        workspace.start()
+
+    def start(self):
         original_deployment_raw = self._get_deployment_definition(
             self.original_deployment_name, self.namespace
         )
@@ -278,13 +309,26 @@ class Workspace:
             self.secret_name,
         )
 
-    def delete(self):
-        """Delete a devmode workspace and associated resources.
+    @staticmethod
+    def delete_existing(workspace_name, namespace):
+        """Delete an existing devmode workspace and associated resources.
 
         Args:
-            self.workspace_name (str): Name of the secret/workspace to delete
+            workspace_name (str): Name of the secret/workspace to delete
             namespace (str): Namespace where the workspace exists (default: default)
         """
+        logger.debug(f"Deleting workspace {workspace_name} in namespace {namespace}")
+
+        try:
+            workspace = Workspace._reconstruct_existing_workspace(
+                workspace_name, namespace
+            )
+            workspace.delete()
+        except client.exceptions.ApiException as e:
+            logger.error(f"Failed to delete workspace: {e}")
+            sys.exit(1)
+
+    def delete(self):
         logger.debug(
             f"Deleting workspace {self.workspace_name} in namespace {self.namespace}"
         )
@@ -355,14 +399,27 @@ class Workspace:
             logger.error(f"Failed to delete workspace: {e}")
             # sys.exit(1)
 
-    def recreate(self, new_workspace_path=None):
-        """
-        Recreates a workspace by deleting the existing one and starting a new one.
+    @staticmethod
+    def recreate_existing(workspace_name, namespace, new_workspace_path=None):
+        """Recreate an existing devmode workspace.
 
         Args:
-            self.workspace_name (str): The name of the workspace to recreate.
-            namespace (str): The namespace of the workspace (default: "default").
+            workspace_name (str): Name of the secret/workspace to recreate
+            namespace (str): Namespace where the workspace exists (default: default)
+            new_workspace_path (str): New workspace path to use (reuses existing by default)
         """
+        logger.debug(f"Recreating workspace {workspace_name} in namespace {namespace}")
+
+        try:
+            workspace = Workspace._reconstruct_existing_workspace(
+                workspace_name, namespace
+            )
+            workspace.recreate(new_workspace_path)
+        except client.exceptions.ApiException as e:
+            logger.error(f"Failed to recreate workspace: {e}")
+            # sys.exit(1)
+
+    def recreate(self, new_workspace_path=None):
         logger.debug(
             f"Attempting to recreate workspace {self.workspace_name} in namespace {self.namespace}"
         )
@@ -604,8 +661,8 @@ class Workspace:
 
     @staticmethod
     def list_workspaces(namespace=None):
-        Config.setup_kubernetes_client()
         """List all devmode workspaces across all namespaces."""
+        Config.setup_kubernetes_client()
         logger.debug("Listing all devmode workspaces")
 
         try:
@@ -799,21 +856,12 @@ class Workspace:
 
 
 if __name__ == "__main__":
-
     logger.debug("Starting script")
     fire.Fire(
         {
-            "start": lambda workspace_name, namespace, deployment_name, workspace_path=None: Workspace(
-                workspace_name, namespace, deployment_name, workspace_path
-            ).start(),
+            "start": Workspace.start_new,
             "list": Workspace.list_workspaces,
-            "delete": lambda workspace_name, namespace: Workspace._reconstruct_existing_workspace(
-                workspace_name, namespace
-            ).delete(),
-            "recreate": lambda workspace_name, namespace, workspace_path=None: Workspace._reconstruct_existing_workspace(
-                workspace_name, namespace
-            ).recreate(
-                workspace_path
-            ),
+            "delete": Workspace.delete_existing,
+            "recreate": Workspace.recreate_existing,
         }
     )
