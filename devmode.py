@@ -32,10 +32,14 @@ class Config:
                 Config.V1_API.list_namespace()
                 logger.debug("Successfully loaded kubeconfig")
             except Exception as e:
-                logger.error(f"Failed to access cluster: {e}")
+                logger.error(f"Failed to access cluster")
+                logger.debug(f"Error: {e}")
+                raise
                 # sys.exit(1)
         except config.config_exception.ConfigException as e:
-            logger.error(f"Error loading kubeconfig: {e}")
+            logger.error(f"Error loading kubeconfig")
+            logger.debug(f"Error: {e}")
+            raise
             # sys.exit(1)
 
 
@@ -159,8 +163,9 @@ class Workspace:
                 )
                 logger.debug(f"Retrieved existing PVC {pvc.metadata.name}")
             else:
-                logger.error(f"Failed to create PVC: {e}")
-                logger.error("Exiting due to PVC creation failure")
+                logger.error(f"Failed to create PVC")
+                logger.debug(f"Error: {e}")
+                raise
                 # sys.exit(1)
 
         # Create deployment in cluster
@@ -195,8 +200,11 @@ class Workspace:
                     )
                     logger.info(f"Cleaned up PVC {self.pvc_name}")
                 except client.exceptions.ApiException as e:
-                    logger.error(f"Failed to cleanup PVC {self.pvc_name}: {e}")
-                # sys.exit(1)
+                    logger.error(f"The workspace is incomplete and cannot be started")
+                    logger.error(f"Failed to cleanup PVC {self.pvc_name}")
+                    logger.debug(f"Error: {e}")
+                    raise
+                    # sys.exit(1)
 
         service_list = Config.V1_API.list_namespaced_service(
             namespace=self.namespace,
@@ -225,7 +233,8 @@ class Workspace:
                 if e.status == 409:
                     logger.warning(f"Service {self.service_name} already exists")
                 else:
-                    logger.error(f"Failed to create service: {e}")
+                    logger.error(f"Failed to create service: {self.service_name}")
+                    logger.debug(f"Error: {e}")
                     raise
         else:
             logger.warning(
@@ -260,7 +269,8 @@ class Workspace:
                 if e.status == 409:
                     logger.warning(f"Ingress {self.ingress_name} already exists")
                 else:
-                    logger.error(f"Failed to create ingress: {e}")
+                    logger.error(f"Failed to create ingress: {self.ingress_name}")
+                    logger.debug(f"Error: {e}")
                     raise
 
         # except client.exceptions.ApiException as e:
@@ -295,8 +305,8 @@ class Workspace:
             if e.status == 409:
                 logger.warning(f"Secret {secret_name} already exists")
             else:
-                logger.error(f"Failed to create secret: {e}")
-                logger.error("Exiting due to secret creation failure")
+                logger.error(f"Failed to create secret: {self.secret_name}")
+                logger.debug(f"Error: {e}")
                 raise
                 # exit(1)
 
@@ -325,8 +335,10 @@ class Workspace:
             )
             workspace.delete()
         except client.exceptions.ApiException as e:
-            logger.error(f"Failed to delete workspace: {e}")
-            sys.exit(1)
+            logger.error(f"Failed to delete workspace: {workspace_name}")
+            logger.debug(f"Error: {e}")
+            raise
+            # sys.exit(1)
 
     def delete(self):
         logger.debug(
@@ -349,7 +361,10 @@ class Workspace:
                             f"Deployment {self.deployment_name} already deleted"
                         )
                     else:
-                        logger.error(f"Failed to delete deployment: {e}")
+                        logger.error(
+                            f"Failed to delete deployment: {self.deployment_name}"
+                        )
+                        logger.debug(f"Error: {e}")
                         raise
 
             if self.pvc_name:
@@ -364,7 +379,8 @@ class Workspace:
                     if e.status == 404:
                         logger.warning(f"PVC {self.pvc_name} already deleted")
                     else:
-                        logger.error(f"Failed to delete PVC: {e}")
+                        logger.error(f"Failed to delete PVC: {self.pvc_name}")
+                        logger.debug(f"Error: {e}")
                         raise
 
             logger.debug(f"Attempting to delete secret {self.secret_name}")
@@ -380,7 +396,8 @@ class Workspace:
                     if e.status == 404:
                         logger.warning(f"Service {self.service_name} already deleted")
                     else:
-                        logger.error(f"Failed to delete service: {e}")
+                        logger.error(f"Failed to delete service: {self.service_name}")
+                        logger.debug(f"Error: {e}")
                         raise
             # Delete the secret itself
             try:
@@ -392,11 +409,14 @@ class Workspace:
                 if e.status == 404:
                     logger.warning(f"Secret {self.secret_name} already deleted")
                 else:
-                    logger.error(f"Failed to delete secret: {e}")
+                    logger.error(f"Failed to delete secret: {self.secret_name}")
+                    logger.debug(f"Error: {e}")
                     raise
 
         except client.exceptions.ApiException as e:
-            logger.error(f"Failed to delete workspace: {e}")
+            logger.error(f"Failed to delete workspace: {self.workspace_name}")
+            logger.debug(f"Error: {e}")
+            raise
             # sys.exit(1)
 
     @staticmethod
@@ -416,7 +436,9 @@ class Workspace:
             )
             workspace.recreate(new_workspace_path)
         except client.exceptions.ApiException as e:
-            logger.error(f"Failed to recreate workspace: {e}")
+            logger.error(f"Failed to recreate workspace: {workspace_name}")
+            logger.debug(f"Error: {e}")
+            raise
             # sys.exit(1)
 
     def recreate(self, new_workspace_path=None):
@@ -439,9 +461,9 @@ class Workspace:
                 f"Retrieved original deployment name from secret: {original_deployment_name}"
             )
         except client.exceptions.ApiException as e:
-            logger.error(
-                f"Failed to get secret for workspace {self.workspace_name}: {e}"
-            )
+            logger.error(f"Failed to get secret for workspace {self.workspace_name}")
+            logger.debug(f"Error: {e}")
+            raise
             # sys.exit(1)
 
         # Delete existing workspace
@@ -723,7 +745,9 @@ class Workspace:
             return table_data
 
         except client.exceptions.ApiException as e:
-            logger.error(f"Failed to list workspaces: {e}")
+            logger.error(f"Failed to list workspaces")
+            logger.debug(f"Error: {e}")
+            raise
             # sys.exit(1)
 
     @staticmethod
@@ -814,7 +838,9 @@ class Workspace:
             # sys.exit(1)
 
         except client.exceptions.ApiException as e:
-            logger.error(f"Failed to list secrets: {e}")
+            logger.error(f"Failed to list secrets")
+            logger.debug(f"Error: {e}")
+            raise
             # sys.exit(1)
 
     @staticmethod
@@ -850,18 +876,27 @@ class Workspace:
             return deployment
         except client.exceptions.ApiException as e:
             logger.error(
-                f"Error fetching deployment {deployment_name} in namespace {namespace}: {e}"
+                f"Error fetching deployment {deployment_name} in namespace {namespace}"
             )
+            logger.debug(f"Error: {e}")
+            raise
             # exit(1)
 
 
 if __name__ == "__main__":
-    logger.debug("Starting script")
-    fire.Fire(
-        {
-            "start": Workspace.start_new,
-            "list": Workspace.list_workspaces,
-            "delete": Workspace.delete_existing,
-            "recreate": Workspace.recreate_existing,
-        }
-    )
+    try:
+        logger.debug("Starting script")
+        fire.Fire(
+            {
+                "start": Workspace.start_new,
+                "list": Workspace.list_workspaces,
+                "delete": Workspace.delete_existing,
+                "recreate": Workspace.recreate_existing,
+            }
+        )
+    except Exception as e:
+        # logger.error(f"Error running script: {e}")
+        logger.error(
+            f"Something went wrong. Prease run with LOG_LEVEL=DEBUG env var to see more details."
+        )
+        sys.exit(1)
