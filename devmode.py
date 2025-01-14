@@ -161,41 +161,40 @@ class Workspace:
                 # sys.exit(1)
 
         # Find realted service and ingress
-        try:
-            service_list = Config.V1_API.list_namespaced_service(
-                namespace=self.namespace,
-                label_selector=f"app.kubernetes.io/instance={original_deployment_raw.metadata.labels['app.kubernetes.io/instance']}",
-            )
-            if service_list.items:
-                original_service = service_list.items[0]
-                self.service_name = f"{original_service.metadata.name}-{self.prefix}"
+        service_list = Config.V1_API.list_namespaced_service(
+            namespace=self.namespace,
+            label_selector=f"app.kubernetes.io/instance={original_deployment_raw.metadata.labels['app.kubernetes.io/instance']}",
+        )
+        if service_list.items:
+            original_service = service_list.items[0]
+            self.service_name = f"{original_service.metadata.name}-{self.prefix}"
 
-                # Create a copy of the service with new labels and name
-                new_service = original_service
-                new_service.metadata.name = self.service_name
-                new_service.metadata.labels = self.labels
-                new_service.spec.selector = self.labels
-                new_service.spec.clusterIPs = None
+            # Create a copy of the service with new labels and name
+            new_service = original_service
+            new_service.metadata.name = self.service_name
+            new_service.metadata.labels = self.labels
+            new_service.metadata.resource_version = None
+            new_service.spec.selector = self.labels
+            new_service.spec.cluster_ip = None
+            new_service.spec.cluster_i_ps = None  # This is a bug in the k8s client
 
-                try:
-                    logger.debug(f"Creating service {self.service_name}")
-                    Config.V1_API.create_namespaced_service(
-                        namespace=self.namespace, body=new_service
-                    )
-                    logger.info(f"Created service {self.service_name}")
-                except client.exceptions.ApiException as e:
-                    if e.status == 409:
-                        logger.warning(f"Service {self.service_name} already exists")
-                    else:
-                        logger.error(f"Failed to create service: {e}")
-                        raise
-            else:
-                logger.warning(
-                    f"No service found with label app.kubernetes.io/instance={self.original_deployment_name}"
+            try:
+                logger.debug(f"Creating service {self.service_name}")
+                Config.V1_API.create_namespaced_service(
+                    namespace=self.namespace, body=new_service
                 )
+                logger.info(f"Created service {self.service_name}")
+            except client.exceptions.ApiException as e:
+                if e.status == 409:
+                    logger.warning(f"Service {self.service_name} already exists")
+                else:
+                    logger.error(f"Failed to create service: {e}")
+                    raise
+        else:
+            logger.warning(
+                f"No service found with label app.kubernetes.io/instance={self.original_deployment_name}"
+            )
 
-        except Exception as e:
-            logger.warning(f"Failed to create service: {e}")
         # except client.exceptions.ApiException as e:
         #     logger.warning(f"Service {self.original_deployment_name} not found: {e}")
 
@@ -350,6 +349,8 @@ class Workspace:
 
         # Delete existing workspace
         self.delete()
+
+        # TODO / wait for pvc to be deleted completely
 
         # Start new workspace
         self.workspace_path = new_workspace_path or workspace_path
