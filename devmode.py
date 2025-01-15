@@ -320,7 +320,7 @@ class Workspace:
         )
 
     @staticmethod
-    def delete_existing(workspace_name, namespace):
+    def delete_existing(workspace_name, namespace, keep_pvc=False):
         """Delete an existing devmode workspace and associated resources.
 
         Args:
@@ -333,14 +333,14 @@ class Workspace:
             workspace = Workspace._reconstruct_existing_workspace(
                 workspace_name, namespace
             )
-            workspace.delete()
+            workspace.delete(keep_pvc=keep_pvc)
         except client.exceptions.ApiException as e:
             logger.error(f"Failed to delete workspace: {workspace_name}")
             logger.debug(f"Error: {e}")
             raise
             # sys.exit(1)
 
-    def delete(self):
+    def delete(self, keep_pvc=False):
         logger.debug(
             f"Deleting workspace {self.workspace_name} in namespace {self.namespace}"
         )
@@ -367,7 +367,7 @@ class Workspace:
                         logger.debug(f"Error: {e}")
                         raise
 
-            if self.pvc_name:
+            if self.pvc_name and keep_pvc is False:
                 logger.debug(f"Attempting to delete PVC {self.pvc_name}")
                 # Delete PVC
                 try:
@@ -420,7 +420,9 @@ class Workspace:
             # sys.exit(1)
 
     @staticmethod
-    def recreate_existing(workspace_name, namespace, new_workspace_path=None):
+    def recreate_existing(
+        workspace_name, namespace, keep_pvc=True, new_workspace_path=None
+    ):
         """Recreate an existing devmode workspace.
 
         Args:
@@ -434,14 +436,14 @@ class Workspace:
             workspace = Workspace._reconstruct_existing_workspace(
                 workspace_name, namespace
             )
-            workspace.recreate(new_workspace_path)
+            workspace.recreate(keep_pvc, new_workspace_path)
         except client.exceptions.ApiException as e:
             logger.error(f"Failed to recreate workspace: {workspace_name}")
             logger.debug(f"Error: {e}")
             raise
             # sys.exit(1)
 
-    def recreate(self, new_workspace_path=None):
+    def recreate(self, keep_pvc=True, new_workspace_path=None):
         logger.debug(
             f"Attempting to recreate workspace {self.workspace_name} in namespace {self.namespace}"
         )
@@ -467,7 +469,7 @@ class Workspace:
             # sys.exit(1)
 
         # Delete existing workspace
-        self.delete()
+        self.delete(keep_pvc=keep_pvc)
 
         # TODO / wait for pvc to be deleted completely
 

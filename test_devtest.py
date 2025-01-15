@@ -35,6 +35,7 @@ def temp_namespace():
             "service_name": "sample-service",
             "ingress_name": "sample-ingress",
             "workspace_path": "/code",
+            "keep_pvc": False,
             "labels": {
                 "app.kubernetes.io/instance": "sample-deployment",
                 "tags.datadoghq.com/env": "dev",
@@ -51,6 +52,7 @@ def temp_namespace():
             "service_name": "sample-service-2",
             "ingress_name": "sample-ingress-2",
             "workspace_path": None,  # Try without workspace path
+            "keep_pvc": True,
             "labels": {
                 "app.kubernetes.io/instance": "sample-deployment-2",  #  MUST Match deployment name
                 "tags.datadoghq.com/env": "dev",
@@ -150,6 +152,7 @@ def sample_workspace(temp_namespace, request):
         request.param["service_name"],
         request.param["ingress_name"],
         request.param["workspace_path"],
+        request.param["keep_pvc"],
     )
 
     # Cleanup
@@ -178,6 +181,7 @@ class TestWorkspace:
             service_name,
             ingress_name,
             workspace_path,
+            keep_pvc,
         ) = sample_workspace
         workspace = devmode.Workspace(
             workspace_name,
@@ -241,6 +245,7 @@ class TestWorkspace:
             workspace_path,
             service_name,
             ingress_name,
+            keep_pvc,
         ) = sample_workspace
         # Verify the workspace shows up in list
         result = devmode.Workspace.list_workspaces(temp_namespace)
@@ -258,7 +263,9 @@ class TestWorkspace:
             workspace_path,
             service_name,
             ingress_name,
+            keep_pvc,
         ) = sample_workspace
+
         devmode.Workspace._reconstruct_existing_workspace(
             workspace_name, temp_namespace
         ).recreate()
@@ -272,8 +279,9 @@ class TestWorkspace:
             workspace_path,
             service_name,
             ingress_name,
+            keep_pvc,
         ) = sample_workspace
         devmode.Workspace._reconstruct_existing_workspace(
             workspace_name, temp_namespace
-        ).delete()
+        ).delete(keep_pvc=keep_pvc)
         # Verify workspace no longer exists
