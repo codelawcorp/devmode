@@ -315,6 +315,13 @@ class Workspace:
             logger.info(
                 f"\033[32mAccess your workspace at: https://{self.ingress_host}\033[0m"
             )
+        for env_var in original_deployment_raw.spec.template.spec.containers[0].env:
+            if "GIT_REPOSITORY_URL" == env_var.name:
+                self.git_repo_url = env_var.value
+                logger.info(
+                    f"When attach to workspace's pod with vscode for the first time run: `cd {self.workspace_path}; rm -rf lost+found ; git clone {self.git_repo_url} . `"
+                )
+                break
             # open this in browser
             # os.system(f"open https://{self.ingress_host}")
         return (
