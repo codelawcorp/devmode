@@ -6,7 +6,8 @@ import datetime
 # ANSI escape codes for colors
 COLORS = {
     "GREY": "\033[38;5;240m",  # Grey for DEBUG
-    "GREEN": "\033[32m",  # Green for INFO
+    "GREEN": "\033[32m",  # Not used
+    "WHITE": "\033[97m",  # Bright White for INFO
     "YELLOW": "\033[33m",  # Yellow for WARNING
     "RED": "\033[31m",  # Red for ERROR
     "BOLD_RED": "\033[31;1m",  # Bold Red for CRITICAL
@@ -22,7 +23,7 @@ class CustomFormatter(logging.Formatter):
 
     LEVEL_COLORS = {
         logging.DEBUG: COLORS["GREY"],
-        logging.INFO: COLORS["GREEN"],
+        logging.INFO: COLORS["WHITE"],
         logging.WARNING: COLORS["YELLOW"],
         logging.ERROR: COLORS["RED"],
         logging.CRITICAL: COLORS["BOLD_RED"],

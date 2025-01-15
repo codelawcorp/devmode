@@ -129,12 +129,6 @@ class Workspace:
         original_deployment_raw = self._get_deployment_definition(
             self.original_deployment_name, self.namespace
         )
-        deployment_raw = self._modify_deployment_for_dev_mode(
-            original_deployment_raw, self.workspace_path
-        )
-
-        logger.debug("Dumping deployment definition to YAML")
-        logger.debug(yaml.dump(deployment_raw.to_dict(), default_flow_style=False))
 
         # Create PVC for the deployment
         pvc = client.V1PersistentVolumeClaim(
@@ -167,44 +161,6 @@ class Workspace:
                 logger.debug(f"Error: {e}")
                 raise
                 # sys.exit(1)
-
-        # Create deployment in cluster
-        try:
-            logger.debug("Attempting to create deployment in cluster")
-            deployment_result = Config.APPS_API.create_namespaced_deployment(
-                body=deployment_raw, namespace=self.namespace
-            )
-            logger.debug("Deployment created successfully")
-            self.deployment_name = deployment_result.metadata.name
-            logger.info(
-                f"Successfully created deployment {self.deployment_name} in namespace {self.namespace}"
-            )
-        except client.exceptions.ApiException as e:
-            if e.status == 409:
-                logger.error(
-                    f"Deployment {self.deployment_name} already exists in namespace {self.namespace}"
-                )
-                logger.warning("To recreate the deployment, first delete it with:")
-                logger.warning(
-                    f"kubectl delete deployment {self.deployment_name} -n {self.namespace}"
-                )
-                # sys.exit(1)
-            else:
-                logger.error(f"Failed to create deployment: {e}")
-                logger.debug(
-                    "Attempting to cleanup PVC due to deployment creation failure"
-                )
-                try:
-                    Config.V1_API.delete_namespaced_persistent_volume_claim(
-                        name=self.pvc_name, namespace=self.namespace
-                    )
-                    logger.info(f"Cleaned up PVC {self.pvc_name}")
-                except client.exceptions.ApiException as e:
-                    logger.error(f"The workspace is incomplete and cannot be started")
-                    logger.error(f"Failed to cleanup PVC {self.pvc_name}")
-                    logger.debug(f"Error: {e}")
-                    raise
-                    # sys.exit(1)
 
         service_list = Config.V1_API.list_namespaced_service(
             namespace=self.namespace,
@@ -271,9 +227,49 @@ class Workspace:
                     logger.error(f"Failed to create ingress: {self.ingress_name}")
                     logger.debug(f"Error: {e}")
                     raise
+        # Create deployment in cluster
+        deployment_raw = self._modify_deployment_for_dev_mode(
+            original_deployment_raw, self.ingress_host, self.workspace_path
+        )
+        logger.debug("Dumping deployment definition to YAML")
+        logger.debug(yaml.dump(deployment_raw.to_dict(), default_flow_style=False))
 
-        # except client.exceptions.ApiException as e:
-        #     logger.warning(f"Service {self.original_deployment_name} not found: {e}")
+        try:
+            logger.debug("Attempting to create deployment in cluster")
+            deployment_result = Config.APPS_API.create_namespaced_deployment(
+                body=deployment_raw, namespace=self.namespace
+            )
+            logger.debug("Deployment created successfully")
+            self.deployment_name = deployment_result.metadata.name
+            logger.info(
+                f"Successfully created deployment {self.deployment_name} in namespace {self.namespace}"
+            )
+        except client.exceptions.ApiException as e:
+            if e.status == 409:
+                logger.error(
+                    f"Deployment {self.deployment_name} already exists in namespace {self.namespace}"
+                )
+                logger.warning("To recreate the deployment, first delete it with:")
+                logger.warning(
+                    f"kubectl delete deployment {self.deployment_name} -n {self.namespace}"
+                )
+                # sys.exit(1)
+            else:
+                logger.error(f"Failed to create deployment: {e}")
+                logger.debug(
+                    "Attempting to cleanup PVC due to deployment creation failure"
+                )
+                try:
+                    Config.V1_API.delete_namespaced_persistent_volume_claim(
+                        name=self.pvc_name, namespace=self.namespace
+                    )
+                    logger.info(f"Cleaned up PVC {self.pvc_name}")
+                except client.exceptions.ApiException as e:
+                    logger.error(f"The workspace is incomplete and cannot be started")
+                    logger.error(f"Failed to cleanup PVC {self.pvc_name}")
+                    logger.debug(f"Error: {e}")
+                    raise
+                    # sys.exit(1)
 
         # Create secret to store deployment and PVC UIDs
         secret_name = self.secret_name
@@ -311,7 +307,9 @@ class Workspace:
 
         logger.info(f"Workspace {self.workspace_name} started successfully")
         if self.ingress_host:
-            logger.info(f"Access your workspace at: https://{self.ingress_host}")
+            logger.info(
+                f"\033[32mAccess your workspace at: https://{self.ingress_host}\033[0m"
+            )
             # open this in browser
             os.system(f"open https://{self.ingress_host}")
         return (
@@ -528,7 +526,9 @@ class Workspace:
 
         logger.info(f"Successfully recreated workspace {self.workspace_name}")
 
-    def _modify_deployment_for_dev_mode(self, old_deployment, workspace_path):
+    def _modify_deployment_for_dev_mode(
+        self, old_deployment, ingress_host, workspace_path
+    ):
         """
         Modifies the deployment definition for development mode:
         - Sets replicas to 1
@@ -672,6 +672,7 @@ class Workspace:
             client.V1EnvVar(name="DD_SERVICE", value=self.deployment_name)
         )
         container.env.append(client.V1EnvVar(name="DD_VERSION", value="latest"))
+        container.env.append(client.V1EnvVar(name="APP_HOSTNAME", value=ingress_host))
 
         logger.debug("Clearing pod security context")
         new_deployment.spec.template.spec.security_context = None
@@ -769,17 +770,28 @@ class Workspace:
                     if secret.data.get("original_deployment_name")
                     else None
                 )
+                ingress_host = (
+                    base64.b64decode(secret.data["ingress_host"]).decode("utf-8")
+                    if secret.data.get("ingress_host")
+                    else None
+                )
                 table_data.append(
                     {
                         "Workspace Name": workspace_name,
                         "Original Deployment": original_deployment_name,
                         "Namespace": namespace,
+                        "Ingress Host": ingress_host and f"https://{ingress_host}",
                     }
                 )
 
             logger.debug("Creating table with tabulate")
             # Create and display table using tabulate
-            headers = ["Workspace Name", "Original Deployment", "Namespace"]
+            headers = [
+                "Workspace Name",
+                "Original Deployment",
+                "Namespace",
+                "Ingress Host",
+            ]
             from tabulate import tabulate
 
             table = tabulate(
