@@ -1,5 +1,4 @@
 #! /usr/bin/env python3
-from math import log
 import os, sys
 
 import fire
@@ -7,6 +6,7 @@ import yaml
 from logger import logger
 from kubernetes import client, config
 import base64
+import time
 
 
 class Config:
@@ -90,6 +90,7 @@ class Workspace:
         self.workspace_path = workspace_path or "/app"
         self.service_name = None
         self.ingress_name = None
+        self.ingress_host = None
 
         self.prefix = f"devmode-{workspace_name}"
         self.deployment_name = f"{self.original_deployment_name}-{self.prefix}"
@@ -156,7 +157,7 @@ class Workspace:
             logger.info(f"Created PVC {pvc.metadata.name}")
         except client.exceptions.ApiException as e:
             if e.status == 409:
-                logger.warning(f"PVC {pvc.metadata.name} already exists")
+                logger.info(f"PVC {pvc.metadata.name} already exists")
                 pvc_result = Config.V1_API.read_namespaced_persistent_volume_claim(
                     name=pvc.metadata.name, namespace=self.namespace
                 )
@@ -254,9 +255,8 @@ class Workspace:
             new_ingress.metadata.name = self.ingress_name
             new_ingress.metadata.labels = self.labels
             new_ingress.metadata.resource_version = None
-            new_ingress.spec.rules[0].host = (
-                f"{self.prefix}.{original_ingress.spec.rules[0].host}"
-            )
+            self.ingress_host = f"{self.prefix}.{original_ingress.spec.rules[0].host}"
+            new_ingress.spec.rules[0].host = self.ingress_host
 
             try:
                 logger.debug(f"Creating ingress {self.ingress_name}")
@@ -275,7 +275,6 @@ class Workspace:
         # except client.exceptions.ApiException as e:
         #     logger.warning(f"Service {self.original_deployment_name} not found: {e}")
 
-        # TODO / make a function of this
         # Create secret to store deployment and PVC UIDs
         secret_name = self.secret_name
         secret = client.V1Secret(
@@ -290,6 +289,7 @@ class Workspace:
                 "workspace_path": self.workspace_path,
                 "service_name": self.service_name,
                 "ingress_name": self.ingress_name,
+                "ingress_host": self.ingress_host,
             },
         )
 
@@ -309,6 +309,11 @@ class Workspace:
                 raise
                 # exit(1)
 
+        logger.info(f"Workspace {self.workspace_name} started successfully")
+        if self.ingress_host:
+            logger.info(f"Access your workspace at: https://{self.ingress_host}")
+            # open this in browser
+            os.system(f"open https://{self.ingress_host}")
         return (
             self.workspace_name,
             self.deployment_name,
@@ -404,6 +409,27 @@ class Workspace:
                     Config.NETWORKING_API.delete_namespaced_ingress(
                         name=self.ingress_name, namespace=self.namespace
                     )
+
+                    logger.debug(
+                        f"Waiting for ingress {self.ingress_name} to be completely deleted"
+                    )
+                    while True:
+                        try:
+                            Config.NETWORKING_API.read_namespaced_ingress(
+                                name=self.ingress_name, namespace=self.namespace
+                            )
+                            logger.debug(
+                                f"Ingress {self.ingress_name} still exists, waiting..."
+                            )
+                            time.sleep(2)
+                        except client.exceptions.ApiException as e:
+                            if e.status == 404:
+                                break
+                            else:
+                                logger.error(
+                                    f"Error while waiting for ingress deletion: {e}"
+                                )
+                                raise
                     logger.info(f"Deleted ingress {self.ingress_name}")
                 except client.exceptions.ApiException as e:
                     if e.status == 404:
@@ -481,6 +507,7 @@ class Workspace:
                 workspace_path,
                 service_name,
                 ingress_name,
+                ingress_host,
                 secret_name,
             ) = self._get_workspace_from_secret(self.workspace_name, self.namespace)
             logger.debug(
@@ -494,8 +521,6 @@ class Workspace:
 
         # Delete existing workspace
         self.delete(keep_pvc=keep_pvc)
-
-        # TODO / wait for pvc to be deleted completely
 
         # Start new workspace
         self.workspace_path = new_workspace_path or workspace_path
@@ -538,8 +563,6 @@ class Workspace:
         new_deployment.metadata.annotations = self.annotations
         new_deployment.metadata.owner_references = None
         new_deployment.metadata.managed_fields = None
-
-        # TODO / remove podAntiAffinity
 
         logger.debug("Modifying containers")
         for container in new_deployment.spec.template.spec.containers:
@@ -844,6 +867,13 @@ class Workspace:
                             if secret.data.get("ingress_name")
                             else None
                         )
+                        ingress_host = (
+                            base64.b64decode(secret.data["ingress_host"]).decode(
+                                "utf-8"
+                            )
+                            if secret.data.get("ingress_host")
+                            else None
+                        )
                         logger.debug(
                             f"Deployment name: {original_deployment_name}, PVC name: {pvc_name}, workspace path: {workspace_path}"
                         )
@@ -855,6 +885,7 @@ class Workspace:
                             workspace_path,
                             service_name,
                             ingress_name,
+                            ingress_host,
                             secret.metadata.name,
                         )
 
@@ -883,6 +914,7 @@ class Workspace:
             workspace_path,
             service_name,
             ingress_name,
+            ingress_host,
             secret_name,
         ) = Workspace._get_workspace_from_secret(workspace_name, namespace)
 
@@ -893,6 +925,7 @@ class Workspace:
         workspace.pvc_name = pvc_name
         workspace.service_name = service_name
         workspace.ingress_name = ingress_name
+        workspace.ingress_host = ingress_host
         workspace.secret_name = secret_name
 
         return workspace
