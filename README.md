@@ -53,6 +53,7 @@ Good news! VSCode propagates your local git credentials into pod automatically. 
 
 ## Development Instructions
 
+- Using **black** for code formatting. Run `black .` to format code. `pip install black`
 - Install git hooks. Run this command `git config core.hooksPath .githooks`.
 
 Run with `LOG_LEVEL=debug devmode list` to see debug logs.

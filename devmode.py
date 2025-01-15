@@ -97,7 +97,7 @@ class Workspace:
         self.pvc_name = f"{self.original_deployment_name}-{self.prefix}"
         self.secret_name = f"{self.original_deployment_name}-{self.prefix}"
         self.labels = {
-            "app.kubernetes.io/instance": self.original_deployment_name,
+            "app.kubernetes.io/instance": self.deployment_name,
             "tool": "devmode",
             "workspace": self.workspace_name,
             "tags.datadoghq.com/env": "dev",
@@ -212,7 +212,12 @@ class Workspace:
             new_ingress.metadata.labels = self.labels
             new_ingress.metadata.resource_version = None
             self.ingress_host = f"{self.prefix}.{original_ingress.spec.rules[0].host}"
+            # Assuming there is only one rule
             new_ingress.spec.rules[0].host = self.ingress_host
+            # Assuming there is only one path
+            for path in new_ingress.spec.rules[0].http.paths:
+                if path.path == "/":
+                    path.backend.service.name = self.service_name
 
             try:
                 logger.debug(f"Creating ingress {self.ingress_name}")
@@ -311,7 +316,7 @@ class Workspace:
                 f"\033[32mAccess your workspace at: https://{self.ingress_host}\033[0m"
             )
             # open this in browser
-            os.system(f"open https://{self.ingress_host}")
+            # os.system(f"open https://{self.ingress_host}")
         return (
             self.workspace_name,
             self.deployment_name,
@@ -376,6 +381,26 @@ class Workspace:
                     Config.V1_API.delete_namespaced_persistent_volume_claim(
                         name=self.pvc_name, namespace=self.namespace
                     )
+                    logger.debug(
+                        f"Waiting for PVC {self.pvc_name} to be completely deleted"
+                    )
+                    while True:
+                        try:
+                            Config.V1_API.read_namespaced_persistent_volume_claim(
+                                name=self.pvc_name, namespace=self.namespace
+                            )
+                            logger.debug(
+                                f"PVC {self.pvc_name} still exists, waiting..."
+                            )
+                            time.sleep(2)
+                        except client.exceptions.ApiException as e:
+                            if e.status == 404:
+                                break
+                            else:
+                                logger.error(
+                                    f"Error while waiting for PVC deletion: {e}"
+                                )
+                                raise
                     logger.info(f"Deleted PVC {self.pvc_name}")
                 except client.exceptions.ApiException as e:
                     if e.status == 404:
