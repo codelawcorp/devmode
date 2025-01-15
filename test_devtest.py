@@ -1,9 +1,9 @@
 import pytest
 import uuid
-import devmode
+from devmode import Config, Workspace
 from kubernetes import client
 
-devmode.Config.setup_kubernetes_client()
+Config.setup_kubernetes_client()
 
 
 ### FIXTURES ### START
@@ -13,15 +13,14 @@ def temp_namespace():
     namespace = f"pytest-{uuid.uuid4().hex[:8]}"
 
     # Create namespace
-    api = client.CoreV1Api()
     ns = client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace))
-    api.create_namespace(ns)
+    Config.V1_API.create_namespace(ns)
 
     yield namespace
 
     # Cleanup - delete namespace and all resources in it
     try:
-        api.delete_namespace(namespace)
+        Config.V1_API.delete_namespace(namespace)
     except client.rest.ApiException:
         pass  # Namespace may already be deleted
 
@@ -50,7 +49,7 @@ def temp_namespace():
             "workspace_name": "sample-workspace-2",
             "deployment_name": "sample-deployment-2",
             "service_name": "sample-service-2",
-            "ingress_name": "sample-ingress-2",
+            "ingress_name": None,  # Try without ingress
             "workspace_path": None,  # Try without workspace path
             "keep_pvc": True,
             "labels": {
@@ -64,10 +63,6 @@ def temp_namespace():
     ],
 )
 def sample_workspace(temp_namespace, request):
-    # Create a deployment
-    apps_api = client.AppsV1Api()
-    core_api = client.CoreV1Api()
-    network = client.NetworkingV1Api()
     deployment = client.V1Deployment(
         metadata=client.V1ObjectMeta(
             name=request.param["deployment_name"],
@@ -96,7 +91,9 @@ def sample_workspace(temp_namespace, request):
             ),
         ),
     )
-    # Create deployment in cluster
+    Config.APPS_API.create_namespaced_deployment(
+        namespace=temp_namespace, body=deployment
+    )
 
     service = client.V1Service(
         metadata=client.V1ObjectMeta(
@@ -112,38 +109,40 @@ def sample_workspace(temp_namespace, request):
             type="ClusterIP",
         ),
     )
-    ingress = client.V1Ingress(
-        metadata=client.V1ObjectMeta(
-            name=request.param["ingress_name"],
-            namespace=temp_namespace,
-            labels=request.param["labels"],
-        ),
-        spec=client.V1IngressSpec(
-            rules=[
-                client.V1IngressRule(
-                    host="example.com",
-                    http=client.V1HTTPIngressRuleValue(
-                        paths=[
-                            client.V1HTTPIngressPath(
-                                path="/",
-                                path_type="Prefix",
-                                backend=client.V1IngressBackend(
-                                    service=client.V1IngressServiceBackend(
-                                        name=request.param["service_name"],
-                                        port={"port": "http", "number": 80},
-                                    )
-                                ),
-                            )
-                        ]
-                    ),
-                )
-            ]
-        ),
-    )
+    Config.V1_API.create_namespaced_service(namespace=temp_namespace, body=service)
 
-    apps_api.create_namespaced_deployment(namespace=temp_namespace, body=deployment)
-    core_api.create_namespaced_service(namespace=temp_namespace, body=service)
-    network.create_namespaced_ingress(namespace=temp_namespace, body=ingress)
+    if request.param["ingress_name"]:
+        ingress = client.V1Ingress(
+            metadata=client.V1ObjectMeta(
+                name=request.param["ingress_name"],
+                namespace=temp_namespace,
+                labels=request.param["labels"],
+            ),
+            spec=client.V1IngressSpec(
+                rules=[
+                    client.V1IngressRule(
+                        host="example.com",
+                        http=client.V1HTTPIngressRuleValue(
+                            paths=[
+                                client.V1HTTPIngressPath(
+                                    path="/",
+                                    path_type="Prefix",
+                                    backend=client.V1IngressBackend(
+                                        service=client.V1IngressServiceBackend(
+                                            name=request.param["service_name"],
+                                            port={"port": "http", "number": 80},
+                                        )
+                                    ),
+                                )
+                            ]
+                        ),
+                    )
+                ]
+            ),
+        )
+        Config.NETWORKING_API.create_namespaced_ingress(
+            namespace=temp_namespace, body=ingress
+        )
 
     yield (
         request.param["workspace_name"],
@@ -157,7 +156,7 @@ def sample_workspace(temp_namespace, request):
 
     # Cleanup
     try:
-        apps_api.delete_namespaced_deployment(
+        Config.APPS_API.delete_namespaced_deployment(
             name=request.param, namespace=temp_namespace
         )
     except client.rest.ApiException:
@@ -183,7 +182,7 @@ class TestWorkspace:
             workspace_path,
             keep_pvc,
         ) = sample_workspace
-        workspace = devmode.Workspace(
+        workspace = Workspace(
             workspace_name,
             temp_namespace,
             deployment_name,
@@ -202,7 +201,8 @@ class TestWorkspace:
             and deployment_name != new_deployment_name
         )
         assert service_name in new_service_name and service_name != new_service_name
-        assert ingress_name in new_ingress_name and ingress_name != new_ingress_name
+        if ingress_name:
+            assert ingress_name in new_ingress_name and ingress_name != new_ingress_name
 
         assert (
             deployment_name in new_secret_name and deployment_name != new_secret_name
@@ -242,13 +242,13 @@ class TestWorkspace:
             workspace_name,
             temp_namespace,
             deployment_name,
-            workspace_path,
             service_name,
             ingress_name,
+            workspace_path,
             keep_pvc,
         ) = sample_workspace
         # Verify the workspace shows up in list
-        result = devmode.Workspace.list_workspaces(temp_namespace)
+        result = Workspace.list_workspaces(temp_namespace)
 
         assert len(result) == 1  # created by the test_start
         assert workspace_name in result[0]["Workspace Name"]
@@ -260,13 +260,13 @@ class TestWorkspace:
             workspace_name,
             temp_namespace,
             deployment_name,
-            workspace_path,
             service_name,
             ingress_name,
+            workspace_path,
             keep_pvc,
         ) = sample_workspace
 
-        devmode.Workspace._reconstruct_existing_workspace(
+        Workspace._reconstruct_existing_workspace(
             workspace_name, temp_namespace
         ).recreate()
 
@@ -276,12 +276,103 @@ class TestWorkspace:
             workspace_name,
             temp_namespace,
             deployment_name,
-            workspace_path,
             service_name,
             ingress_name,
+            workspace_path,
             keep_pvc,
         ) = sample_workspace
-        devmode.Workspace._reconstruct_existing_workspace(
+
+        (
+            deleted_workspace_name,
+            deleted_deployment_name,
+            deleted_pvc_name,
+            deleted_service_name,
+            deleted_ingress_name,
+            deleted_secret_name,
+        ) = Workspace._reconstruct_existing_workspace(
             workspace_name, temp_namespace
-        ).delete(keep_pvc=keep_pvc)
-        # Verify workspace no longer exists
+        ).delete(
+            keep_pvc=keep_pvc
+        )
+
+        assert deleted_workspace_name == workspace_name
+        assert deployment_name in deleted_deployment_name
+        assert service_name in deleted_service_name
+        if ingress_name:
+            assert ingress_name in deleted_ingress_name
+        assert deployment_name in deleted_secret_name
+        assert deployment_name in deleted_pvc_name
+
+        # Check if deployment exists
+        try:
+
+            deployment_found = Config.APPS_API.read_namespaced_deployment(
+                name=deleted_deployment_name, namespace=temp_namespace
+            )
+            assert (
+                deployment_found is None
+            ), f"Deployment {deleted_deployment_name} still present"
+        except client.rest.ApiException as e:
+            if e.status == 404:
+                pass  # Deployment not found is expected
+            else:
+                assert (
+                    False
+                ), f"Failed to read deployment {deleted_deployment_name}: {e}"
+
+        # Check if service exists
+        try:
+            service_found = Config.V1_API.read_namespaced_service(
+                name=deleted_service_name, namespace=temp_namespace
+            )
+            assert (
+                service_found is None
+            ), f"Service {deleted_service_name} still present"
+        except client.rest.ApiException as e:
+            if e.status == 404:
+                pass  # Service not found is expected
+            else:
+                assert False, f"Failed to read service {deleted_service_name}"
+
+        # Check if secret exists
+        try:
+            secret_found = Config.V1_API.read_namespaced_secret(
+                name=deleted_deployment_name, namespace=temp_namespace
+            )
+            assert (
+                secret_found is None
+            ), f"Secret {deleted_deployment_name} still present"
+        except client.rest.ApiException as e:
+            if e.status == 404:
+                pass  # Service not found is expected
+            else:
+                assert False, f"Failed to read secret {deleted_deployment_name}: {e}"
+
+        # Check if pvc exists
+        if not keep_pvc:
+            try:
+                pvc_found = Config.V1_API.read_namespaced_persistent_volume_claim(
+                    name=deleted_pvc_name, namespace=temp_namespace
+                )
+                assert pvc_found is not None, f"PVC {deleted_pvc_name} still present"
+            except client.rest.ApiException as e:
+                if e.status == 404:
+                    pass  # PVC not found is expected
+                else:
+                    assert False, f"Failed to read PVC {deleted_pvc_name}: {e}"
+
+        # Check if ingress exists
+        if ingress_name:
+            try:
+                network = client.NetworkingV1Api()
+                ingress_found = network.read_namespaced_ingress(
+                    name=deleted_ingress_name, namespace=temp_namespace
+                )
+                assert (
+                    ingress_found is not None
+                ), f"Ingress {deleted_ingress_name} still present"
+            except client.rest.ApiException as e:
+                if e.status == 404:
+                    pass  # Ingress not found is expected
+                else:
+                    assert False, f"Failed to read ingress {deleted_ingress_name}: {e}"

@@ -23,9 +23,8 @@ class Config:
             config.load_kube_config(config_file=kubeconfig)
 
             Config.V1_API = client.CoreV1Api()
-            Config.NETWORKING_API = client.NetworkingV1Api()
-            Config.V1_API = client.CoreV1Api()
             Config.APPS_API = client.AppsV1Api()
+            Config.NETWORKING_API = client.NetworkingV1Api()
 
             try:
                 # Test access to the cluster
@@ -383,8 +382,6 @@ class Workspace:
                         logger.debug(f"Error: {e}")
                         raise
 
-            logger.debug(f"Attempting to delete secret {self.secret_name}")
-
             if self.service_name:
                 logger.debug(f"Attempting to delete service {self.service_name}")
                 try:
@@ -399,12 +396,39 @@ class Workspace:
                         logger.error(f"Failed to delete service: {self.service_name}")
                         logger.debug(f"Error: {e}")
                         raise
+
+            # Delete ingress
+            if self.ingress_name:
+                logger.debug(f"Attempting to delete ingress {self.ingress_name}")
+                try:
+                    Config.NETWORKING_API.delete_namespaced_ingress(
+                        name=self.ingress_name, namespace=self.namespace
+                    )
+                    logger.info(f"Deleted ingress {self.ingress_name}")
+                except client.exceptions.ApiException as e:
+                    if e.status == 404:
+                        logger.warning(f"Ingress {self.ingress_name} already deleted")
+                    else:
+                        logger.error(f"Failed to delete ingress: {self.ingress_name}")
+                        logger.debug(f"Error: {e}")
+                        raise
+
             # Delete the secret itself
+            logger.debug(f"Attempting to delete secret {self.secret_name}")
             try:
                 Config.V1_API.delete_namespaced_secret(
                     name=self.secret_name, namespace=self.namespace
                 )
                 logger.info(f"Deleted secret {self.secret_name}")
+
+                return (
+                    self.workspace_name,
+                    self.deployment_name,
+                    self.pvc_name,
+                    self.service_name,
+                    self.ingress_name,
+                    self.secret_name,
+                )
             except client.exceptions.ApiException as e:
                 if e.status == 404:
                     logger.warning(f"Secret {self.secret_name} already deleted")
@@ -837,6 +861,7 @@ class Workspace:
             logger.error(
                 f"No workspace found with name {workspace_name} in namespace {namespace}"
             )
+            raise ValueError("Workspace not found")
             # sys.exit(1)
 
         except client.exceptions.ApiException as e:
@@ -861,9 +886,16 @@ class Workspace:
             secret_name,
         ) = Workspace._get_workspace_from_secret(workspace_name, namespace)
 
-        return Workspace(
+        workspace = Workspace(
             workspace_name, namespace, original_deployment_name, workspace_path
         )
+
+        workspace.pvc_name = pvc_name
+        workspace.service_name = service_name
+        workspace.ingress_name = ingress_name
+        workspace.secret_name = secret_name
+
+        return workspace
 
     @staticmethod
     def _get_deployment_definition(deployment_name, namespace):
