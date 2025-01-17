@@ -62,12 +62,13 @@ use `.vscode/launch.json`
 `devmode -- --interactive`
 `devmode -- --trace	`
 
-### Contribution
+### Contributions, improvements
 
 <!-- - Configure Jenkinsfile and Github Action  -->
 
 - Show informative error when aws logged out.
 - Validate inputs
+- Show nice error message when the cluster is not accessible or access is denied
 - Enable creating a pod's clone. Now you can clone only Deployment.
 - Enable non gp2 StorageClass (or use default).
 - Enable Specifying a custom image.

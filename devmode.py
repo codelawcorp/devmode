@@ -14,29 +14,53 @@ class Config:
     APPS_API = None
     NETWORKING_API = None
 
-    # @staticmethod
-    def setup_kubernetes_client():
+    PARSED_CONFIG = None
+
+    def __init__(self):
+        self.setup_kubernetes_client()
+        self.parse_config_yaml()
+        pass
+
+    @classmethod
+    def setup_kubernetes_client(cls):
         logger.debug("Setting up logging and attempting to load kubeconfig")
         try:
             kubeconfig = os.getenv("KUBECONFIG", "~/.kube/config")
             logger.debug(f"Using kubeconfig path: {kubeconfig}")
             config.load_kube_config(config_file=kubeconfig)
 
-            Config.V1_API = client.CoreV1Api()
-            Config.APPS_API = client.AppsV1Api()
-            Config.NETWORKING_API = client.NetworkingV1Api()
+            cls.V1_API = client.CoreV1Api()
+            cls.APPS_API = client.AppsV1Api()
+            cls.NETWORKING_API = client.NetworkingV1Api()
 
             try:
                 # Test access to the cluster
-                Config.V1_API.list_namespace()
+                cls.V1_API.list_namespace()
                 logger.debug("Successfully loaded kubeconfig")
             except Exception as e:
                 logger.error(f"Failed to access cluster")
                 logger.debug(f"Error: {e}")
                 raise
                 # sys.exit(1)
-        except config.config_exception.ConfigException as e:
+        except Exception as e:
             logger.error(f"Error loading kubeconfig")
+            logger.debug(f"Error: {e}")
+            raise
+            # sys.exit(1)
+
+    @classmethod
+    def parse_config_yaml(cls):
+        # Get the pass relative to this file
+        base_path = os.path.dirname(os.path.realpath(__file__))
+        logger.debug("Parsing config.yaml")
+        try:
+            with open(f"{base_path}/config.yaml", "r") as file:
+                config_data = yaml.safe_load(file)
+                logger.debug("Successfully parsed config.yaml")
+                cls.PARSED_CONFIG = config_data
+                return config_data
+        except Exception as e:
+            logger.error("Failed to parse config.yaml")
             logger.debug(f"Error: {e}")
             raise
             # sys.exit(1)
@@ -108,7 +132,7 @@ class Workspace:
             "com.datadoghq.ad.tags": f'["workspace_name:{workspace_name}",]'
         }
 
-        Config.setup_kubernetes_client()
+        Config()
 
     @staticmethod
     def start_new(workspace_name, namespace, deployment_name, workspace_path=None):
@@ -211,7 +235,18 @@ class Workspace:
             new_ingress.metadata.name = self.ingress_name
             new_ingress.metadata.labels = self.labels
             new_ingress.metadata.resource_version = None
-            self.ingress_host = f"{self.prefix}.{original_ingress.spec.rules[0].host}"
+            if (
+                Config.PARSED_CONFIG.get("base_domain")
+                in new_ingress.spec.rules[0].host
+            ):
+                self.ingress_host = (
+                    f"{self.prefix}.{Config.PARSED_CONFIG.get('base_domain')}"
+                )
+                logger.debug(f"Using ingress host: {self.ingress_host}")
+            else:
+                logger.warning(
+                    f"Could not determine ingress host. The configured base domain is {Config.PARSED_CONFIG.get('base_domain')}. The found ingress is hostname is {original_ingress.spec.rules[0].host}"
+                )
             # Assuming there is only one rule
             new_ingress.spec.rules[0].host = self.ingress_host
             # Assuming there is only one path
@@ -766,7 +801,7 @@ class Workspace:
     @staticmethod
     def list_workspaces(namespace=None):
         """List all devmode workspaces across all namespaces."""
-        Config.setup_kubernetes_client()
+        Config()
         logger.debug("Listing all devmode workspaces")
 
         try:
@@ -947,8 +982,7 @@ class Workspace:
 
     @staticmethod
     def _reconstruct_existing_workspace(workspace_name, namespace):
-        Config.setup_kubernetes_client()
-
+        Config()
         Workspace.workspace_name = workspace_name
         Workspace.namespace = namespace
         (
