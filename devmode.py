@@ -733,7 +733,7 @@ class Workspace:
         if not container.env:
             container.env = []
         container.env.append(client.V1EnvVar(name="DEV_MODE", value="true"))
-        container.env.append(client.V1EnvVar(name="DEBUG", value="true"))
+        container.env.append(client.V1EnvVar(name="LOG_LEVEL", value="DEBUG"))
         container.env.append(client.V1EnvVar(name="DD_ENV", value="dev"))
         container.env.append(
             client.V1EnvVar(name="DD_SERVICE", value=self.original_deployment_name)
