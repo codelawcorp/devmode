@@ -1,8 +1,8 @@
 # DevMode Tool Documentation
 
-DevMode is a command-line interface (CLI) tool implemented in Python that facilitates development process in Kubernetes environments.
+A command-line interface (CLI) tool that lessens the dependence on a local dev environment. It compliments VS Code Kubernetes extension. It enabled developer to create a copy of existing pod in an existing command, but it also automatically attaches a PV, Ingress, elevates privileges and other. A new pod is called “workspace”.
 
-DevMode enables development directly in a `dev` EKS environment, providing greater parity with production compared to local solutions like docker-compose or Minikube.
+Developing directly in EKS cluster provides a greater parity with production compared to any local alternatives like devcontainers, docker-compose or Minikube etc. As a result - less debugging, absolutely no time wasted on a local development setup toil.
 
 It provides **more control**, **less errors**, **faster iterations**.
 
