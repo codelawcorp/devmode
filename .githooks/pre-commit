@@ -11,3 +11,4 @@ npx validate-branch-name -r '^(main|prod|stg|dev)$|^(feature|fix|hotfix)/.+$'
 pytest
 black --check .
 
+gitleaks git --staged
