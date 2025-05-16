@@ -639,19 +639,19 @@ class Workspace:
             container.args = [
                 """
                     if command -v apt-get &> /dev/null; then
-                        apt-get update && apt-get install -y git make
+                        apt-get update && apt-get install -y git make awscli
                     elif command -v yum &> /dev/null; then
-                        yum install -y git make
+                        yum install -y git make awscli
                     elif command -v dnf &> /dev/null; then
-                        dnf install -y git make
+                        dnf install -y git make awscli
                     elif command -v zypper &> /dev/null; then
-                        zypper install -y git make
+                        zypper install -y git make awscli
                     elif command -v pacman &> /dev/null; then
-                        pacman -Sy git make
+                        pacman -Sy git make aws-cli
                     elif command -v apk &> /dev/null; then
-                        apk add git make
+                        apk add git make aws-cli
                     else
-                        echo "Unsupported package manager. Please install git manually."
+                        echo "Unsupported package manager. Please install git and aws-cli manually."
                     fi
 
                     chmod u+w /root # This is required for vscode server
