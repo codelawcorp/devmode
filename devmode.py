@@ -721,6 +721,7 @@ class Workspace:
             logger.debug("Removing probes")
             container.liveness_probe = None
             container.readiness_probe = None
+            container.startup_probe = None
 
             logger.debug("Handling container ports")
             if not container.ports:
