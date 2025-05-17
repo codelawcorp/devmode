@@ -228,6 +228,7 @@ class Workspace:
         )
         if ingress_list.items:
             original_ingress = ingress_list.items[0]
+            original_ingress_host = original_ingress.spec.rules[0].host
             self.ingress_name = f"{original_ingress.metadata.name}-{self.prefix}"
 
             # Create a copy of the ingress with new labels and name
@@ -235,18 +236,20 @@ class Workspace:
             new_ingress.metadata.name = self.ingress_name
             new_ingress.metadata.labels = self.labels
             new_ingress.metadata.resource_version = None
+            # If actual ingress host matches expected domain
             if (
                 Config.PARSED_CONFIG.get("base_domain")
-                in new_ingress.spec.rules[0].host
+                in original_ingress_host
             ):
-                self.ingress_host = (
-                    f"{self.prefix}.{Config.PARSED_CONFIG.get('base_domain')}"
-                )
+                self.ingress_host =  f"{self.prefix}.{Config.PARSED_CONFIG.get('base_domain')}"
+                
                 logger.debug(f"Using ingress host: {self.ingress_host}")
             else:
                 logger.warning(
-                    f"Could not determine ingress host. The configured base domain is {Config.PARSED_CONFIG.get('base_domain')}. The found ingress is hostname is {original_ingress.spec.rules[0].host}"
+                    f"Base domain from configfile is not a substring of the actual ingress host. The configured base domain is {Config.PARSED_CONFIG.get('base_domain')}. The found ingress hostname is {original_ingress_host}. Attempting to use the original ingress host with '{self.workspace_name}' subdomain."
                 )
+                self.ingress_host = f"{self.workspace_name}.{original_ingress_host}"
+                logger.debug(f"Using ingress host: {self.ingress_host}")
             # Assuming there is only one rule
             new_ingress.spec.rules[0].host = self.ingress_host
             # Assuming there is only one path
