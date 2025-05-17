@@ -8,12 +8,14 @@
       "program": "${workspaceFolder}/devmode.py",
       "args": [
         "start",
-        "risk-rule-engine-server",
-        "human-risk" // assuming default namespace, change if needed
+        "magzim21",
+        "employer-navigator",
+        "employer-navigator" // assuming default namespace, change if needed
       ],
       // "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
+        "LOG_LEVEL": "DEBUG",
         // "PYTHONPATH": "${workspaceFolder}"
       }
     },
@@ -26,6 +28,7 @@
       // "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
+        "LOG_LEVEL": "DEBUG",
         // "PYTHONPATH": "${workspaceFolder}"
       }
     },
@@ -36,12 +39,13 @@
       "program": "${workspaceFolder}/devmode.py",
       "args": [
         "delete",
-        "risk-rule-engine-server-mblp7t3v33mf-devmode",
-        "human-risk"
+        "magzim21",
+        "employer-navigator"
       ],
       // "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
+        "LOG_LEVEL": "DEBUG",
         // "PYTHONPATH": "${workspaceFolder}"
       }
     },
@@ -52,12 +56,13 @@
       "program": "${workspaceFolder}/devmode.py",
       "args": [
         "recreate",
-        "risk-rule-engine-server-mblp7t3v33mf-devmode",
-        "human-risk"
+        "employer-navigator-mblp7t3v33mf-devmode",
+        "employer-navigator"
       ],
       // "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
+        "LOG_LEVEL": "DEBUG",
         // "PYTHONPATH": "${workspaceFolder}"
       }
     },
@@ -70,6 +75,7 @@
       // "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
+        "LOG_LEVEL": "DEBUG",
         // "PYTHONPATH": "${workspaceFolder}"
       }
     }
