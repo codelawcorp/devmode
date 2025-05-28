@@ -45,6 +45,7 @@ Good news! VSCode propagates your local git credentials into pod automatically. 
   Open the `workspace_path` in VScode.  
   Open terminal in VScode and clone your repo:
   `git clone <your_repo_url> .`
+  `git config commit.gpgsign false` Run this if GPG if getting commit signing  errors. 
 
 🎊
 

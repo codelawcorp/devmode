@@ -738,9 +738,9 @@ class Workspace:
             container.env = []
         container.env.append(client.V1EnvVar(name="DEV_MODE", value="true"))
         container.env.append(client.V1EnvVar(name="LOG_LEVEL", value="DEBUG"))
-        container.env.append(client.V1EnvVar(name="DD_ENV", value="dev"))
+        # container.env.append(client.V1EnvVar(name="DD_ENV", value="dev")) # Do not set it. If you have any tags set in both the Agent and within your containers, the tag's value will be duplicateed, not overwritten.
         container.env.append(
-            client.V1EnvVar(name="DD_SERVICE", value=self.original_deployment_name)
+            client.V1EnvVar(name="DD_SERVICE", value=self.deployment_name)
         )
         container.env.append(client.V1EnvVar(name="DD_VERSION", value="latest"))
         container.env.append(client.V1EnvVar(name="APP_HOSTNAME", value=ingress_host))
